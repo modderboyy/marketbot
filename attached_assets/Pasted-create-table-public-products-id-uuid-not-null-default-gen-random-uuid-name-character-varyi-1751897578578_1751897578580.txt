@@ -1,0 +1,53 @@
+create table public.products (
+  id uuid not null default gen_random_uuid (),
+  name character varying(255) not null,
+  description text null,
+  price numeric(10, 2) not null,
+  image_url text null,
+  category_id uuid null,
+  seller_id uuid null,
+  product_type character varying(50) not null default 'other'::character varying,
+  brand character varying(100) null,
+  author character varying(100) null,
+  isbn character varying(20) null,
+  stock_quantity integer null default 0,
+  order_count integer null default 0,
+  rating numeric(3, 2) null default 4.5,
+  like_count integer null default 0,
+  is_popular boolean null default false,
+  is_featured boolean null default false,
+  is_active boolean null default true,
+  has_delivery boolean null default false,
+  delivery_price numeric(10, 2) null default 0,
+  has_warranty boolean null default false,
+  warranty_months integer null default 0,
+  is_returnable boolean null default true,
+  return_days integer null default 7,
+  created_at timestamp with time zone null default now(),
+  updated_at timestamp with time zone null default now(),
+  comment_count integer null default 0,
+  average_rating numeric(3, 2) null default 0.00,
+  is_approved boolean null default false,
+  moderation_status character varying(20) null default 'pending'::character varying,
+  admin_notes text null,
+  view_count numeric null,
+  constraint products_pkey primary key (id),
+  constraint products_category_id_fkey foreign KEY (category_id) references categories (id),
+  constraint products_seller_id_fkey foreign KEY (seller_id) references users (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_products_category on public.products using btree (category_id) TABLESPACE pg_default;
+
+create index IF not exists idx_products_seller on public.products using btree (seller_id) TABLESPACE pg_default;
+
+create index IF not exists idx_products_type on public.products using btree (product_type) TABLESPACE pg_default;
+
+create index IF not exists idx_products_popular on public.products using btree (is_popular) TABLESPACE pg_default;
+
+create index IF not exists idx_products_featured on public.products using btree (is_featured) TABLESPACE pg_default;
+
+create index IF not exists idx_products_active on public.products using btree (is_active) TABLESPACE pg_default;
+
+create index IF not exists idx_products_books on public.products using btree (product_type) TABLESPACE pg_default
+where
+  ((product_type)::text = 'book'::text);
