@@ -209,6 +209,7 @@ async function showOrderDetail(bot, chatId, messageId, orderId) {
         const statusText = order.status === 'completed' ? '✅ Yetkazildi' : 
                           order.status === 'cancelled' ? '❌ Bekor qilindi' : 
                           order.status === 'confirmed' ? '✅ Tasdiqlandi' : 
+                          order.status === 'stopped' ? '🛑 To\'xtatildi' :
                           '⏳ Kutilmoqda';
 
         const orderMessage = `📦 *Buyurtma Tafsilotlari*
@@ -583,6 +584,7 @@ async function showAdminOrderDetail(bot, chatId, messageId, orderId) {
         const statusText = order.status === 'completed' ? '✅ Yetkazildi' : 
                           order.status === 'cancelled' ? '❌ Bekor qilindi' : 
                           order.status === 'confirmed' ? '✅ Tasdiqlandi' : 
+                          order.status === 'stopped' ? '🛑 To\'xtatildi' :
                           '⏳ Kutilmoqda';
 
         const orderMessage = `📦 *Buyurtma Tafsilotlari (Admin)*

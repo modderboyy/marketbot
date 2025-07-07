@@ -256,13 +256,36 @@ async function handleProductDelivered(bot, chatId, messageId, orderId) {
 }
 
 async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
-    await safeEditMessage(bot, chatId, messageId, '❌ Mahsulot berilmadi deb belgilandi.', {
-        reply_markup: {
-            inline_keyboard: [[
-                { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
-            ]]
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
+
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                status: 'stopped',
+                delivery_status: false,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            console.error('Error updating order status:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma holatini yangilashda xatolik.');
+            return;
         }
-    });
+
+        await safeEditMessage(bot, chatId, messageId, '❌ Mahsulot berilmadi deb belgilandi. Buyurtma to\'xtatildi.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                ]]
+            }
+        });
+    } catch (error) {
+        console.error('Error in handleProductNotDelivered:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma holatini yangilashda xatolik yuz berdi.');
+    }
 }
 
 async function handleMainCenterConfirmation(bot, chatId, messageId, orderId) {
