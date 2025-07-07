@@ -177,7 +177,7 @@ async function showMyOrders(bot, chatId, messageId) {
     } catch (error) {
         console.error('Error in showMyOrders:', error);
     }
-} ma\'lumotlari topilmadi.');
+} 'ma\'lumotlari topilmadi.');
             return;
         }
 
