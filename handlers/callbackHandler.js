@@ -48,7 +48,10 @@ async function handleCallback(bot, callbackQuery) {
     } else if (data === 'my_profile') {
         await showProfile(bot, chatId, messageId);
     } else if (data === 'my_orders') {
-        await showMyOrders(bot, chatId, messageId);
+        await handleCustomerOrders(bot, chatId, messageId);
+    } else if (data.startsWith('order_detail_')) {
+        const orderId = data.replace('order_detail_', '');
+        await handleOrderDetail(bot, chatId, messageId, orderId);
     } else if (data === 'contact_admin') {
         await handleContactAdmin(bot, chatId, messageId);
     } else if (data === 'search_products') {
@@ -207,31 +210,39 @@ async function handleCustomerNotArrived(bot, chatId, messageId, orderId) {
 }
 
 async function handleProductDelivered(bot, chatId, messageId, orderId) {
-    try {
-        const { supabase } = require('../utils/database');
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
 
+    try {
         const { error } = await supabase
             .from('orders')
             .update({ 
                 status: 'completed',
-                delivery_status: 'delivered',
+                delivery_status: true,
                 updated_at: new Date().toISOString()
             })
             .eq('id', orderId);
 
         if (error) {
-            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma holatini yangilashda xatolik.');
+            console.error('Error updating order status:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani yakunlashda xatolik.');
             return;
         }
 
-        // Get order details to notify customer
-        const { data: order } = await supabase
+        // Notify customer
+        const { data: order, error: fetchError } = await supabase
             .from('orders')
-            .select('user_id, products(name), users!inner(telegram_id)')
+            .select(`
+                user_id,
+                products(name),
+                users!inner(telegram_id)
+            `)
             .eq('id', orderId)
             .single();
 
-        if (order && order.users) {
+        if (fetchError) {
+            console.error('Error fetching order for notification:', fetchError);
+        } else if (order && order.users) {
             await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma yakunlandi*\n\n📦 Mahsulot: ${order.products?.name}\n\nRahmat! Bizdan xarid qilganingiz uchun tashakkur!`, {
                 parse_mode: 'Markdown'
             });
@@ -240,6 +251,7 @@ async function handleProductDelivered(bot, chatId, messageId, orderId) {
         await safeEditMessage(bot, chatId, messageId, '✅ Buyurtma muvaffaqiyatli yakunlandi. Mijozga xabar yuborildi.');
     } catch (error) {
         console.error('Error in handleProductDelivered:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani yakunlashda xatolik yuz berdi.');
     }
 }
 
@@ -256,9 +268,9 @@ async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
 async function handleMainCenterConfirmation(bot, chatId, messageId, orderId) {
     try {
         const { supabase } = require('../utils/database');
-        
+
         const mainCenterAddress = "Qashqadaryo viloyati, G'uzor tumani, Fazo yonida";
-        
+
         const { error } = await supabase
             .from('orders')
             .update({ 
@@ -301,7 +313,7 @@ async function handleMainCenterConfirmation(bot, chatId, messageId, orderId) {
 
 async function handleManualAddressConfirmation(bot, chatId, messageId, orderId) {
     const { adminSessions } = require('../utils/sessionManager');
-    
+
     adminSessions.set(chatId, { 
         state: 'awaiting_delivery_address', 
         orderId: orderId 
@@ -315,6 +327,152 @@ async function handleManualAddressConfirmation(bot, chatId, messageId, orderId) 
             ]]
         }
     });
+}
+
+async function handleCustomerOrders(bot, chatId, messageId) {
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
+
+    try {
+        // First get user ID from telegram_id
+        const { data: user, error: userError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('telegram_id', chatId)
+            .single();
+
+        if (userError || !user) {
+            await safeEditMessage(bot, chatId, messageId, '❌ Foydalanuvchi ma\'lumotlari topilmadi.');
+            return;
+        }
+
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select(`
+                id,
+                product_id,
+                full_name,
+                phone,
+                address,
+                quantity,
+                total_amount,
+                status,
+                delivery_status,
+                created_at,
+                products(name, price)
+            `)
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching orders:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmalarni yuklashda xatolik yuz berdi.');
+            return;
+        }
+
+        if (!orders || orders.length === 0) {
+            await safeEditMessage(bot, chatId, messageId, '📋 Sizda hech qanday buyurtma yo\'q.', {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                    ]]
+                }
+            });
+            return;
+        }
+
+        let ordersList = '';
+        const keyboard = [];
+
+        orders.forEach((order, index) => {
+            const statusIcon = order.status === 'confirmed' ? '✅' : order.status === 'cancelled' ? '❌' : '⏳';
+            const deliveryIcon = order.delivery_status ? '🚚' : '📦';
+
+            ordersList += `${index + 1}. ${statusIcon} ${order.products?.name || 'Noma\'lum mahsulot'}\n`;
+            ordersList += `   💰 ${order.total_amount} so'm\n`;
+            ordersList += `   📅 ${new Date(order.created_at).toLocaleDateString('uz-UZ')}\n`;
+            ordersList += `   📊 ${order.status === 'confirmed' ? 'Tasdiqlangan' : order.status === 'cancelled' ? 'Bekor qilingan' : 'Kutilmoqda'}\n\n`;
+
+            keyboard.push([{ text: `📋 ${index + 1}-buyurtma`, callback_data: `order_detail_${order.id}` }]);
+        });
+
+        keyboard.push([{ text: '🔙 Orqaga', callback_data: 'main_menu' }]);
+
+        await safeEditMessage(bot, chatId, messageId, `📋 *Sizning buyurtmalaringiz:*\n\n${ordersList}`, {
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard }
+        });
+
+    } catch (error) {
+        console.error('Error in handleCustomerOrders:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmalarni ko\'rsatishda xatolik yuz berdi.');
+    }
+}
+
+async function handleOrderDetail(bot, chatId, messageId, orderId) {
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
+
+    try {
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select(`
+                id,
+                product_id,
+                full_name,
+                phone,
+                address,
+                quantity,
+                total_amount,
+                status,
+                delivery_status,
+                created_at,
+                products(name, price)
+            `)
+            .eq('id', orderId)
+            .single();
+
+        if (error) {
+            console.error('Error fetching order details:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma tafsilotlarini yuklashda xatolik yuz berdi.');
+            return;
+        }
+
+        if (!order) {
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma topilmadi.');
+            return;
+        }
+
+        const statusText = order.status === 'confirmed' ? 'Tasdiqlangan' : order.status === 'cancelled' ? 'Bekor qilingan' : 'Kutilmoqda';
+        const deliveryText = order.delivery_status ? 'Yetkazilgan' : 'Yetkazilmagan';
+
+        const orderDetails = `
+            *Buyurtma tafsilotlari:*
+            ID: ${order.id}
+            Mahsulot: ${order.products?.name || 'Noma\'lum mahsulot'}
+            To'liq ism: ${order.full_name}
+            Telefon: ${order.phone}
+            Manzil: ${order.address}
+            Miqdor: ${order.quantity}
+            Umumiy summa: ${order.total_amount} so'm
+            Holat: ${statusText}
+            Yetkazish holati: ${deliveryText}
+            Yaratilgan vaqti: ${new Date(order.created_at).toLocaleDateString('uz-UZ')}
+        `;
+
+        await safeEditMessage(bot, chatId, messageId, orderDetails, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Orqaga', callback_data: 'my_orders' }
+                ]]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in handleOrderDetail:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma tafsilotlarini ko\'rsatishda xatolik yuz berdi.');
+    }
 }
 
 module.exports = { handleCallback };
