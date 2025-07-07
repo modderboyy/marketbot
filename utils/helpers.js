@@ -1,8 +1,9 @@
-
 const { ADMIN_IDS } = require('./constants');
 
-function isAdmin(userId) {
-    return ADMIN_IDS.includes(userId.toString());
+// Check if user is admin
+function isAdmin(chatId) {
+    const numericChatId = parseInt(chatId);
+    return ADMIN_IDS.includes(numericChatId);
 }
 
 function validatePhoneNumber(phone) {
@@ -13,11 +14,11 @@ function validatePhoneNumber(phone) {
 function validateBirthDate(dateStr) {
     const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
     if (!dateRegex.test(dateStr)) return false;
-    
+
     const [day, month, year] = dateStr.split('.').map(Number);
     const date = new Date(year, month - 1, day);
     const now = new Date();
-    
+
     return date.getFullYear() === year && 
            date.getMonth() === month - 1 && 
            date.getDate() === day &&
