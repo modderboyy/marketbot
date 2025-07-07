@@ -267,13 +267,23 @@ async function showProductDetails(chatId, messageId, productId) {
             return;
         }
 
+        // Check if user has liked this product
+        const { data: userLike } = await supabase
+            .from('product_likes')
+            .select('*')
+            .eq('product_id', productId)
+            .eq('user_id', chatId.toString())
+            .single();
+
+        const likeButtonText = userLike ? '💔 Like olib tashlash' : '❤️ Yoqtirish';
+        
         const message = formatProductMessage(product);
         
         const keyboard = {
             inline_keyboard: [
                 [
                     { text: '🛒 Buyurtma berish', callback_data: `order_${productId}` },
-                    { text: '❤️ Yoqtirish', callback_data: `like_${productId}` }
+                    { text: likeButtonText, callback_data: `like_${productId}` }
                 ],
                 [{ text: '🔙 Orqaga', callback_data: `category_${product.category_id}` }]
             ]
@@ -295,27 +305,131 @@ async function showProductDetails(chatId, messageId, productId) {
 }
 
 // Handle like product
-async function handleLikeProduct(chatId, messageId, productId) {
+async function handleLikeProduct(chatId, callbackQueryId, productId) {
     try {
-        // Increment like count
-        const { error } = await supabase
-            .from('products')
-            .update({ like_count: supabase.sql`like_count + 1` })
-            .eq('id', productId);
+        // Check if user already liked this product
+        const { data: existingLike, error: checkError } = await supabase
+            .from('product_likes')
+            .select('*')
+            .eq('product_id', productId)
+            .eq('user_id', chatId.toString())
+            .single();
 
-        if (error) {
-            console.error('Error updating like count:', error);
-            await bot.answerCallbackQuery(messageId, { text: '❌ Xatolik yuz berdi.' });
+        if (checkError && checkError.code !== 'PGRST116') {
+            console.error('Error checking existing like:', checkError);
+            await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
             return;
         }
 
-        await bot.answerCallbackQuery(messageId, { text: '❤️ Yoqtirildi!' });
+        if (existingLike) {
+            // User already liked - remove like
+            const { error: deleteError } = await supabase
+                .from('product_likes')
+                .delete()
+                .eq('product_id', productId)
+                .eq('user_id', chatId.toString());
+
+            if (deleteError) {
+                console.error('Error removing like:', deleteError);
+                await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
+                return;
+            }
+
+            // Decrement like count
+            const { data: product, error: getError } = await supabase
+                .from('products')
+                .select('like_count')
+                .eq('id', productId)
+                .single();
+
+            if (!getError && product) {
+                const newLikeCount = Math.max(0, (product.like_count || 0) - 1);
+                await supabase
+                    .from('products')
+                    .update({ like_count: newLikeCount })
+                    .eq('id', productId);
+            }
+
+            await bot.answerCallbackQuery(callbackQueryId, { text: '💔 Like olib tashlandi!' });
+        } else {
+            // User hasn't liked - add like
+            const { error: insertError } = await supabase
+                .from('product_likes')
+                .insert({
+                    product_id: productId,
+                    user_id: chatId.toString(),
+                    created_at: new Date().toISOString()
+                });
+
+            if (insertError) {
+                console.error('Error adding like:', insertError);
+                await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
+                return;
+            }
+
+            // Increment like count
+            const { data: product, error: getError } = await supabase
+                .from('products')
+                .select('like_count')
+                .eq('id', productId)
+                .single();
+
+            if (!getError && product) {
+                const newLikeCount = (product.like_count || 0) + 1;
+                await supabase
+                    .from('products')
+                    .update({ like_count: newLikeCount })
+                    .eq('id', productId);
+            }
+
+            await bot.answerCallbackQuery(callbackQueryId, { text: '❤️ Yoqtirildi!' });
+        }
         
-        // Refresh product details
-        await showProductDetails(chatId, messageId, productId);
+        // Refresh product details by finding the message and updating it
+        const { data: updatedProduct, error: productError } = await supabase
+            .from('products')
+            .select('*')
+            .eq('id', productId)
+            .single();
+
+        if (!productError && updatedProduct) {
+            // Check if user has liked this product for button text
+            const { data: userLike } = await supabase
+                .from('product_likes')
+                .select('*')
+                .eq('product_id', productId)
+                .eq('user_id', chatId.toString())
+                .single();
+
+            const likeButtonText = userLike ? '💔 Like olib tashlash' : '❤️ Yoqtirish';
+            
+            const message = formatProductMessage(updatedProduct);
+            const keyboard = {
+                inline_keyboard: [
+                    [
+                        { text: '🛒 Buyurtma berish', callback_data: `order_${productId}` },
+                        { text: likeButtonText, callback_data: `like_${productId}` }
+                    ],
+                    [{ text: '🔙 Orqaga', callback_data: `category_${updatedProduct.category_id}` }]
+                ]
+            };
+
+            // Get the message ID from the callback query
+            try {
+                await bot.editMessageText(message, {
+                    chat_id: chatId,
+                    message_id: callbackQueryId,
+                    reply_markup: keyboard,
+                    parse_mode: 'Markdown'
+                });
+            } catch (editError) {
+                // If editing fails, it might be because the message is too old
+                console.log('Could not edit message, sending new one');
+            }
+        }
     } catch (error) {
         console.error('Error in handleLikeProduct:', error);
-        await bot.answerCallbackQuery(messageId, { text: '❌ Xatolik yuz berdi.' });
+        await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
     }
 }
 
@@ -427,10 +541,19 @@ async function completeOrder(chatId, session) {
         }
 
         // Update product order count
-        await supabase
+        const { data: currentProduct, error: getCurrentError } = await supabase
             .from('products')
-            .update({ order_count: supabase.sql`order_count + 1` })
-            .eq('id', productId);
+            .select('order_count')
+            .eq('id', productId)
+            .single();
+
+        if (!getCurrentError && currentProduct) {
+            const newOrderCount = (currentProduct.order_count || 0) + 1;
+            await supabase
+                .from('products')
+                .update({ order_count: newOrderCount })
+                .eq('id', productId);
+        }
 
         const successMessage = `✅ *Buyurtma muvaffaqiyatli qabul qilindi!*
 
@@ -517,7 +640,7 @@ async function handleWebhook(req, res) {
                 await startOrderProcess(chatId, messageId, productId);
             } else if (data.startsWith('like_')) {
                 const productId = data.split('_')[1];
-                await handleLikeProduct(chatId, callbackQuery.id, productId);
+                await handleLikeProduct(chatId, messageId, productId);
             }
         }
 
