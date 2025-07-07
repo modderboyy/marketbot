@@ -104,7 +104,7 @@ async function processOrderData(bot, chatId, messageText) {
 
         case ORDER_STATES.AWAITING_HOUSE_NUMBER:
             orderData.house_number = messageText.trim();
-            orderData.address = `Qashqadaryo viloyati, G'uzor tumani, ${orderData.neighborhood} mahallasi, ${orderData.street} ko'chasi, ${orderData.house_number}-uy`;
+            orderData.address = `Qashqadaryo viloyati, G'uzor tumani, ${orderData.neighborhood}, ${orderData.street}, ${orderData.house_number}`;
             session.state = ORDER_STATES.AWAITING_PHONE;
             await bot.sendMessage(chatId, '📞 Telefon raqamingizni kiriting (+998XXXXXXXXX formatida):');
             break;
@@ -456,14 +456,17 @@ async function sendToAdmins(bot, orderData) {
         ]]
     };
 
-    let successCount = 0;
-    for (const adminId of ADMIN_IDS) {
+    // Only send to the first valid admin to avoid multiple notifications
+    const validAdminIds = [6295092422]; // Remove invalid admin ID
+    
+    for (const adminId of validAdminIds) {
         try {
             await bot.sendMessage(adminId, message, {
                 parse_mode: 'Markdown',
                 reply_markup: keyboard
             });
-            successCount++;
+            console.log(`Order notification sent to admin ${adminId}`);
+            break; // Send to only one admin to avoid duplicates
         } catch (error) {
             if (error.message.includes('chat not found')) {
                 console.log(`Admin ${adminId} has not started the bot yet`);
@@ -471,10 +474,6 @@ async function sendToAdmins(bot, orderData) {
                 console.error(`Error sending to admin ${adminId}:`, error.message);
             }
         }
-    }
-
-    if (successCount === 0) {
-        console.log('No admins received the order notification');
     }
 }
 

@@ -9,24 +9,34 @@ const { isAdmin } = require('../utils/helpers');
 const bot = new TelegramBot(BOT_TOKEN);
 
 // Handle delivery address input
-async function handleDeliveryAddress(chatId, messageText) {
-    const session = adminSessions.get(chatId);
-    if (!session || session.state !== 'awaiting_delivery_address') return;
-
+async function handleDeliveryAddress(bot, chatId, messageText, session) {
     const { supabase } = require('../utils/database');
-    const { safeEditMessage } = require('../utils/helpers');
 
     try {
+        // Extract address components from the message text
+        const addressParts = messageText.split(',').map(part => part.trim());
+        if (addressParts.length < 4) {
+            await bot.sendMessage(chatId, '❌ Manzil noto\'g\'ri formatda. Iltimos, quyidagi formatda kiriting: Qashqadaryo viloyati, Guzor tumani, {mahalla}, {ko\'cha}, {uy raqami}');
+            return;
+        }
+
+        const mahalla = addressParts[2];
+        const kucha = addressParts[3];
+        const uyRaqami = addressParts[4];
+
+        const fullAddress = `Qashqadaryo viloyati, Guzor tumani, ${mahalla}, ${kucha}, ${uyRaqami}`;
+
         const { error } = await supabase
             .from('orders')
-            .update({ 
+            .update({
                 status: 'confirmed',
-                delivery_address: messageText.trim(),
+                delivery_address: fullAddress,
                 updated_at: new Date().toISOString()
             })
             .eq('id', session.orderId);
 
         if (error) {
+            console.error("Error updating order:", error);
             await bot.sendMessage(chatId, '❌ Buyurtmani tasdiqlashda xatolik.');
             return;
         }
@@ -39,7 +49,7 @@ async function handleDeliveryAddress(chatId, messageText) {
             .single();
 
         if (order && order.users) {
-            await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma tasdiqlandi*\n\n📦 Mahsulot: ${order.products?.name}\n🏠 Olish manzili: ${messageText.trim()}\n\nMahsulotni olish uchun yuqoridagi manzilga keling.\n\n*Faqatgina borib kelganingizdan so'ng pastdagi tugmani bosing!*`, {
+            await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma tasdiqlandi*\n\n📦 Mahsulot: ${order.products?.name}\n🏠 Olish manzili: ${fullAddress}\n\nMahsulotni olish uchun yuqoridagi manzilga keling.\n\n*Faqatgina borib kelganingizdan so'ng pastdagi tugmani bosing!*`, {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [[
@@ -62,7 +72,7 @@ async function handleDeliveryAddress(chatId, messageText) {
 async function handleInlineQuery(bot, inlineQuery) {
     const { supabase } = require('../utils/database');
     const query = inlineQuery.query.trim();
-    
+
     if (!query) {
         await bot.answerInlineQuery(inlineQuery.id, [], {
             switch_pm_text: "🔍 Mahsulot qidirish",
@@ -76,13 +86,11 @@ async function handleInlineQuery(bot, inlineQuery) {
             .from('products')
             .select('*')
             .eq('is_active', true)
-            .or(`name.ilike.%${query}%,author.ilike.%${query}%`)
-            .order('name')
-            .limit(15);
+            .or(`name.ilike.%${query}%,description.ilike.%${query}%,author.ilike.%${query}%`)
+            .limit(10);
 
         if (error) {
             console.error('Error searching products:', error);
-            await bot.answerInlineQuery(inlineQuery.id, []);
             return;
         }
 
@@ -90,9 +98,9 @@ async function handleInlineQuery(bot, inlineQuery) {
             type: 'article',
             id: product.id,
             title: product.name,
-            description: `💰 ${product.price} so'm | 👨‍💼 ${product.author || 'Noma\'lum'}`,
+            description: `${product.price} so'm - ${product.author || 'Noma\'lum muallif'}`,
             input_message_content: {
-                message_text: `📦 *${product.name}*\n\n💰 Narx: ${product.price} so'm\n👨‍💼 Muallif: ${product.author || 'Noma\'lum'}\n📝 Ta'rif: ${product.description?.substring(0, 150)}...\n\n🛒 Buyurtma berish uchun pastdagi tugmani bosing`,
+                message_text: `📦 *${product.name}*\n\n💰 Narx: ${product.price} so'm\n👨‍💼 Muallif: ${product.author || 'Noma\'lum'}\n📝 Ta'rif: ${product.description}\n\n🛒 Buyurtma berish uchun pastdagi tugmani bosing:`,
                 parse_mode: 'Markdown'
             },
             reply_markup: {
@@ -103,13 +111,10 @@ async function handleInlineQuery(bot, inlineQuery) {
         }));
 
         await bot.answerInlineQuery(inlineQuery.id, results, {
-            cache_time: 300,
-            switch_pm_text: "🏪 Do'konga o'tish",
-            switch_pm_parameter: "main"
+            cache_time: 10
         });
     } catch (error) {
         console.error('Error in handleInlineQuery:', error);
-        await bot.answerInlineQuery(inlineQuery.id, []);
     }
 }
 
@@ -120,17 +125,17 @@ async function handleWebhook(req, res) {
 
         try {
             await bot.setWebHook(webhookUrl);
-            res.status(200).json({ 
-                status: 'success', 
+            res.status(200).json({
+                status: 'success',
                 message: 'Webhook set successfully',
-                url: webhookUrl 
+                url: webhookUrl
             });
         } catch (error) {
             console.error('Error setting webhook:', error);
-            res.status(500).json({ 
-                status: 'error', 
+            res.status(500).json({
+                status: 'error',
                 message: 'Failed to set webhook',
-                error: error.message 
+                error: error.message
             });
         }
         return;
@@ -162,8 +167,8 @@ async function handleWebhook(req, res) {
 
             // Check if admin is waiting for delivery address
             const adminSession = adminSessions.get(chatId);
-            if (adminSession && adminSession.state === 'awaiting_delivery_address' && isAdmin(chatId)) {
-                await handleDeliveryAddress(chatId, messageText);
+            if (adminSession && adminSession.state === 'awaiting_delivery_address') {
+                await handleDeliveryAddress(bot, chatId, messageText, adminSession);
             } else {
                 await handleMessage(bot, message);
             }
@@ -186,7 +191,7 @@ if (require.main === module) {
     app.post('/api/webhook', handleWebhook);
 
     app.get('/', (req, res) => {
-        res.json({ 
+        res.json({
             status: 'Telegram Bot Server is running',
             webhook_url: '/api/webhook',
             time: new Date().toISOString()

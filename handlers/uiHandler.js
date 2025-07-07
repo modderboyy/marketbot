@@ -189,12 +189,13 @@ async function showOrderDetail(bot, chatId, messageId, orderId) {
             .from('orders')
             .select(`
                 *,
-                products (name, price)
+                products (name, price, description, author)
             `)
             .eq('id', orderId)
             .single();
 
         if (error || !order) {
+            console.error('Error fetching order:', error);
             await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma topilmadi.');
             return;
         }
@@ -208,6 +209,8 @@ async function showOrderDetail(bot, chatId, messageId, orderId) {
 
 🆔 Buyurtma ID: ${order.id}
 📦 Mahsulot: ${order.products?.name || 'Noma\'lum'}
+📝 Ta'rif: ${order.products?.description || 'Ma\'lumot yo\'q'}
+👨‍💼 Muallif: ${order.products?.author || 'Noma\'lum'}
 🔢 Miqdor: ${order.quantity}
 💰 Jami summa: ${order.total_amount} so'm
 📊 Holat: ${statusText}
@@ -216,7 +219,11 @@ async function showOrderDetail(bot, chatId, messageId, orderId) {
 👤 Mijoz ma'lumotlari:
 📛 F.I.O: ${order.full_name}
 📞 Telefon: ${order.phone}
-🏠 Manzil: ${order.address}`;
+🏠 Manzil: ${order.address}
+📅 Tug'ilgan sana: ${order.birth_date || 'Noma\'lum'}
+👨‍💼 Kasb: ${order.profession || 'Noma\'lum'}
+
+${order.delivery_address ? `🚚 Yetkazish manzili: ${order.delivery_address}` : ''}`;
 
         let keyboard = [[{ text: '🔙 Buyurtmalarga qaytish', callback_data: 'my_orders' }]];
 
@@ -234,6 +241,7 @@ async function showOrderDetail(bot, chatId, messageId, orderId) {
         });
     } catch (error) {
         console.error('Error in showOrderDetail:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma ma\'lumotlarini olishda xatolik.');
     }
 }
 

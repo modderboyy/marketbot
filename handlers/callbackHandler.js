@@ -116,6 +116,9 @@ async function handleCallback(bot, callbackQuery) {
                 ]]
             }
         });
+    } else if (data.startsWith('order_detail_user_')) {
+         const orderId = data.split('_')[3];
+         await showOrderDetailForUser(bot, chatId, messageId, orderId);
     }
     // Address selection callbacks
     else if (data === 'select_region_qashqadaryo') {
@@ -154,6 +157,74 @@ async function handleCallback(bot, callbackQuery) {
         const orderId = data.replace('confirm_manual_address_', '');
         await handleManualAddressConfirmation(bot, chatId, messageId, orderId);
     }
+}
+
+// Implementation for showOrderDetailForUser function
+async function showOrderDetailForUser(bot, chatId, messageId, orderId) {
+    try {
+        const { supabase } = require('../utils/database');
+
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select('*, products(name)')
+            .eq('id', orderId)
+            .eq('user_id', chatId)
+            .single();
+
+        if (error || !order) {
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma topilmadi.',{
+                 reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🔙 Orqaga', callback_data: 'my_orders' }
+                    ]]
+                 }
+            });
+            return;
+        }
+
+        const address = `Qashqadaryo viloyati, Guzor tumani, ${order.mahalla}, ${order.kucha}, ${order.house_number}`;
+
+        const orderDetailText = `
+📦 *Buyurtma Tafsilotlari* 📦
+
+Mahsulot nomi: ${order.products?.name}
+Manzil: ${address}
+Telefon raqam: ${order.phone}
+Ism: ${order.full_name}
+Buyurtma holati: ${order.status}
+        `;
+
+        await safeEditMessage(bot, chatId, messageId, orderDetailText, {
+            parse_mode: 'Markdown',
+             reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🔙 Orqaga', callback_data: 'my_orders' }
+                    ]]
+                 }
+        });
+
+    } catch (error) {
+        console.error('Error fetching order details:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma tafsilotlarini yuklashda xatolik.',{
+             reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🔙 Orqaga', callback_data: 'my_orders' }
+                    ]]
+                 }
+        });
+    }
+}
+
+async function handleMainCenterConfirmation(bot, chatId, messageId, orderId) {
+    // Implementation for handleMainCenterConfirmation
+    console.log(`handleMainCenterConfirmation called with orderId: ${orderId}`);
+    await safeEditMessage(bot, chatId, messageId, `✅ Buyurtma ${orderId} markaziy ofisga yetkazildi.`);
+}
+
+async function handleManualAddressConfirmation(bot, chatId, messageId, orderId) {
+    // Implementation for handleManualAddressConfirmation
+    console.log(`handleManualAddressConfirmation called with orderId: ${orderId}`);
+    await safeEditMessage(bot, chatId, messageId, `✅ Buyurtma ${orderId} manual manzilga yetkazildi.`);
 }
 
 async function handleCustomerArrived(bot, chatId, messageId, orderId) {
