@@ -507,16 +507,16 @@ async function handleWebhook(req, res) {
             } else if (data === 'buy_products') {
                 await showCategories(chatId, messageId);
             } else if (data.startsWith('category_')) {
-                const categoryId = parseInt(data.split('_')[1]);
+                const categoryId = data.split('_')[1];
                 await showProducts(chatId, messageId, categoryId);
             } else if (data.startsWith('product_')) {
-                const productId = parseInt(data.split('_')[1]);
+                const productId = data.split('_')[1];
                 await showProductDetails(chatId, messageId, productId);
             } else if (data.startsWith('order_')) {
-                const productId = parseInt(data.split('_')[1]);
+                const productId = data.split('_')[1];
                 await startOrderProcess(chatId, messageId, productId);
             } else if (data.startsWith('like_')) {
-                const productId = parseInt(data.split('_')[1]);
+                const productId = data.split('_')[1];
                 await handleLikeProduct(chatId, callbackQuery.id, productId);
             }
         }
