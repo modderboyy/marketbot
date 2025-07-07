@@ -38,10 +38,13 @@ async function safeEditMessage(bot, chatId, messageId, text, options = {}) {
     } catch (error) {
         if (error.message.includes('there is no text in the message to edit') || 
             error.message.includes('message to edit not found') ||
-            error.message.includes('query is too old')) {
-            // Send new message if editing fails
+            error.message.includes('query is too old') ||
+            error.message.includes('message is not modified')) {
+            // Send new message if editing fails or message is same
             try {
-                await bot.sendMessage(chatId, text, options);
+                if (!error.message.includes('message is not modified')) {
+                    await bot.sendMessage(chatId, text, options);
+                }
                 return true;
             } catch (sendError) {
                 console.error('Error sending new message:', sendError);

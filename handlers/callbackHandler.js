@@ -116,9 +116,6 @@ async function handleCallback(bot, callbackQuery) {
                 ]]
             }
         });
-    } else if (data.startsWith('order_detail_user_')) {
-         const orderId = data.split('_')[3];
-         await showOrderDetailForUser(bot, chatId, messageId, orderId);
     }
     // Address selection callbacks
     else if (data === 'select_region_qashqadaryo') {
@@ -157,74 +154,6 @@ async function handleCallback(bot, callbackQuery) {
         const orderId = data.replace('confirm_manual_address_', '');
         await handleManualAddressConfirmation(bot, chatId, messageId, orderId);
     }
-}
-
-// Implementation for showOrderDetailForUser function
-async function showOrderDetailForUser(bot, chatId, messageId, orderId) {
-    try {
-        const { supabase } = require('../utils/database');
-
-        const { data: order, error } = await supabase
-            .from('orders')
-            .select('*, products(name)')
-            .eq('id', orderId)
-            .eq('user_id', chatId)
-            .single();
-
-        if (error || !order) {
-            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma topilmadi.',{
-                 reply_markup: {
-                    inline_keyboard: [[
-                        { text: '🔙 Orqaga', callback_data: 'my_orders' }
-                    ]]
-                 }
-            });
-            return;
-        }
-
-        const address = `Qashqadaryo viloyati, Guzor tumani, ${order.mahalla}, ${order.kucha}, ${order.house_number}`;
-
-        const orderDetailText = `
-📦 *Buyurtma Tafsilotlari* 📦
-
-Mahsulot nomi: ${order.products?.name}
-Manzil: ${address}
-Telefon raqam: ${order.phone}
-Ism: ${order.full_name}
-Buyurtma holati: ${order.status}
-        `;
-
-        await safeEditMessage(bot, chatId, messageId, orderDetailText, {
-            parse_mode: 'Markdown',
-             reply_markup: {
-                    inline_keyboard: [[
-                        { text: '🔙 Orqaga', callback_data: 'my_orders' }
-                    ]]
-                 }
-        });
-
-    } catch (error) {
-        console.error('Error fetching order details:', error);
-        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma tafsilotlarini yuklashda xatolik.',{
-             reply_markup: {
-                    inline_keyboard: [[
-                        { text: '🔙 Orqaga', callback_data: 'my_orders' }
-                    ]]
-                 }
-        });
-    }
-}
-
-async function handleMainCenterConfirmation(bot, chatId, messageId, orderId) {
-    // Implementation for handleMainCenterConfirmation
-    console.log(`handleMainCenterConfirmation called with orderId: ${orderId}`);
-    await safeEditMessage(bot, chatId, messageId, `✅ Buyurtma ${orderId} markaziy ofisga yetkazildi.`);
-}
-
-async function handleManualAddressConfirmation(bot, chatId, messageId, orderId) {
-    // Implementation for handleManualAddressConfirmation
-    console.log(`handleManualAddressConfirmation called with orderId: ${orderId}`);
-    await safeEditMessage(bot, chatId, messageId, `✅ Buyurtma ${orderId} manual manzilga yetkazildi.`);
 }
 
 async function handleCustomerArrived(bot, chatId, messageId, orderId) {
@@ -319,6 +248,70 @@ async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
         reply_markup: {
             inline_keyboard: [[
                 { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+            ]]
+        }
+    });
+}
+
+async function handleMainCenterConfirmation(bot, chatId, messageId, orderId) {
+    try {
+        const { supabase } = require('../utils/database');
+        
+        const mainCenterAddress = "Qashqadaryo viloyati, G'uzor tumani, Fazo yonida";
+        
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                status: 'confirmed',
+                delivery_address: mainCenterAddress,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani tasdiqlashda xatolik.');
+            return;
+        }
+
+        // Get order details to notify customer
+        const { data: order } = await supabase
+            .from('orders')
+            .select('user_id, products(name), users!inner(telegram_id)')
+            .eq('id', orderId)
+            .single();
+
+        if (order && order.users) {
+            await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma tasdiqlandi*\n\n📦 Mahsulot: ${order.products?.name}\n🏠 Olish manzili: ${mainCenterAddress}\n\nMahsulotni olish uchun yuqoridagi manzilga keling.\n\n*Faqatgina borib kelganingizdan so'ng pastdagi tugmani bosing!*`, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '✅ Bordim', callback_data: `customer_arrived_${orderId}` },
+                        { text: '❌ Bormadim', callback_data: `customer_not_arrived_${orderId}` }
+                    ]]
+                }
+            });
+        }
+
+        await safeEditMessage(bot, chatId, messageId, '✅ Buyurtma asosiy markazga tasdiqlandi. Mijozga manzil yuborildi.');
+    } catch (error) {
+        console.error('Error in handleMainCenterConfirmation:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani tasdiqlashda xatolik yuz berdi.');
+    }
+}
+
+async function handleManualAddressConfirmation(bot, chatId, messageId, orderId) {
+    const { adminSessions } = require('../utils/sessionManager');
+    
+    adminSessions.set(chatId, { 
+        state: 'awaiting_delivery_address', 
+        orderId: orderId 
+    });
+
+    await safeEditMessage(bot, chatId, messageId, '✍️ *Qo\'lda yetkazish manzilini kiriting:*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[
+                { text: '❌ Bekor qilish', callback_data: 'admin_panel' }
             ]]
         }
     });

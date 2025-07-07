@@ -35,6 +35,14 @@ async function handleMessage(bot, message) {
             const parts = messageText.split(' ');
             if (parts.length > 1 && parts[1].startsWith('order_')) {
                 const productId = parts[1].replace('order_', '');
+                
+                // Validate productId is a valid UUID
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+                if (!uuidRegex.test(productId)) {
+                    await bot.sendMessage(chatId, '❌ Noto\'g\'ri mahsulot havolasi.');
+                    return;
+                }
+                
                 // Ensure user is registered first
                 const user = await getOrCreateUser(chatId, userInfo, true);
                 if (!user) {
@@ -42,6 +50,29 @@ async function handleMessage(bot, message) {
                     const registrationMessage = `🔐 *Ro'yxatdan o'tish*
 
 Buyurtma berish uchun telefon raqamingizni ulashing.`;
+
+                    const keyboard = {
+                        keyboard: [[{
+                            text: '📞 Telefon raqamni ulashish',
+                            request_contact: true
+                        }]],
+                        one_time_keyboard: true,
+                        resize_keyboard: true
+                    };
+
+                    await bot.sendMessage(chatId, registrationMessage, {
+                        reply_markup: keyboard,
+                        parse_mode: 'Markdown'
+                    });
+                    return;
+                } else {
+                    // User is registered, start order process
+                    const { startOrderProcess } = require('../utils/orderUtils');
+                    await startOrderProcess(bot, chatId, null, productId);
+                    return;
+                }
+            }
+            await handleStart(bot, chatId, null, userInfo);.`;
 
                     const keyboard = {
                         keyboard: [[{

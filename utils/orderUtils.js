@@ -458,7 +458,7 @@ async function sendToAdmins(bot, orderData) {
 
     // Only send to the first valid admin to avoid multiple notifications
     const validAdminIds = [6295092422]; // Remove invalid admin ID
-    
+
     for (const adminId of validAdminIds) {
         try {
             await bot.sendMessage(adminId, message, {

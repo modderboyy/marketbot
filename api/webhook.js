@@ -98,14 +98,14 @@ async function handleInlineQuery(bot, inlineQuery) {
             type: 'article',
             id: product.id,
             title: product.name,
-            description: `${product.price} so'm - ${product.author || 'Noma\'lum muallif'}`,
+            description: `💰 ${product.price} so'm | 👨‍💼 ${product.author || 'Noma\'lum'}`,
             input_message_content: {
-                message_text: `📦 *${product.name}*\n\n💰 Narx: ${product.price} so'm\n👨‍💼 Muallif: ${product.author || 'Noma\'lum'}\n📝 Ta'rif: ${product.description}\n\n🛒 Buyurtma berish uchun pastdagi tugmani bosing:`,
+                message_text: `📦 *${product.name}*\n\n💰 Narx: ${product.price} so'm\n👨‍💼 Muallif: ${product.author || 'Noma\'lum'}\n📝 Ta'rif: ${product.description?.substring(0, 150)}...\n\n🛒 Buyurtma berish uchun pastdagi tugmani bosing`,
                 parse_mode: 'Markdown'
             },
             reply_markup: {
                 inline_keyboard: [[
-                    { text: '🛒 Buyurtma berish', url: `https://t.me/globalmarketshopbot?start=order_${product.id}` }
+                    { text: '🛒 Buyurtma berish', url: `https://t.me/${process.env.BOT_USERNAME || 'globalmarketshopbot'}?start=order_${product.id}` }
                 ]]
             }
         }));

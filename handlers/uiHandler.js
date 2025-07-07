@@ -1,4 +1,3 @@
-
 const { safeEditMessage, isAdmin } = require('../utils/helpers');
 const { supabase } = require('../utils/database');
 const { getOrCreateUser } = require('../utils/userUtils');
@@ -160,7 +159,7 @@ async function showMyOrders(bot, chatId, messageId) {
             const statusEmoji = order.status === 'pending' ? '⏳' :
                                order.status === 'confirmed' ? '✅' :
                                order.status === 'completed' ? '🎉' : '❌';
-            
+
             orderMessage += `${statusEmoji} *${order.products?.name || 'Noma\'lum mahsulot'}*\n`;
             orderMessage += `💰 ${order.total_amount} so'm\n`;
             orderMessage += `📅 ${new Date(order.created_at).toLocaleDateString('uz-UZ')}\n\n`;
@@ -185,6 +184,13 @@ async function showMyOrders(bot, chatId, messageId) {
 // Show order details
 async function showOrderDetail(bot, chatId, messageId, orderId) {
     try {
+        // Validate orderId is a valid UUID
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(orderId)) {
+            await safeEditMessage(bot, chatId, messageId, '❌ Noto\'g\'ri buyurtma ID.');
+            return;
+        }
+
         const { data: order, error } = await supabase
             .from('orders')
             .select(`
@@ -272,27 +278,27 @@ async function showCategories(bot, chatId, messageId) {
         }
 
         const message = '🗂 *Kategoriyalarni tanlang:*';
-        
+
         // Create 2-column layout
         const keyboard = { inline_keyboard: [] };
-        
+
         for (let i = 0; i < categories.length; i += 2) {
             const row = [];
             row.push({ 
                 text: `${categories[i].icon || '📦'} ${categories[i].name_uz}`, 
                 callback_data: `category_${categories[i].id}` 
             });
-            
+
             if (i + 1 < categories.length) {
                 row.push({ 
                     text: `${categories[i + 1].icon || '📦'} ${categories[i + 1].name_uz}`, 
                     callback_data: `category_${categories[i + 1].id}` 
                 });
             }
-            
+
             keyboard.inline_keyboard.push(row);
         }
-        
+
         keyboard.inline_keyboard.push([{ text: '🔙 Orqaga', callback_data: 'main_menu' }]);
 
         await safeEditMessage(bot, chatId, messageId, message, {
@@ -332,7 +338,7 @@ async function showProducts(bot, chatId, messageId, categoryId) {
         }
 
         const message = '📦 *Mahsulotlarni tanlang:*';
-        
+
         const keyboard = {
             inline_keyboard: [
                 ...products.map(product => [
@@ -368,7 +374,7 @@ async function showProductDetails(bot, chatId, messageId, productId) {
 
         const seller = product.users || null;
         const message = formatProductMessage(product, seller);
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -536,7 +542,7 @@ async function showAdminOrders(bot, chatId, messageId) {
         }
 
         const message = `📦 *Buyurtmalar (${orders.length} ta)*\n\nQuyidagi buyurtmalardan birini tanlang:`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 ...orders.map((order, index) => [
@@ -659,7 +665,7 @@ async function searchProducts(bot, chatId, messageId, searchQuery) {
         }
 
         const message = `🔍 *Qidiruv natijalari: "${searchQuery}"*\n\nTopilgan mahsulotlar:`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 ...products.map(product => [
@@ -682,11 +688,11 @@ function formatProductMessage(product, seller = null) {
     const deliveryText = product.has_delivery ? 
         `🚚 Yetkazib berish: ${product.delivery_price > 0 ? `${product.delivery_price} so'm` : 'Bepul'}` : 
         '🚫 Yetkazib berish yo\'q';
-    
+
     const warrantyText = product.has_warranty ? 
         `🛡 Kafolat: ${product.warranty_months} oy` : 
         '🚫 Kafolat yo\'q';
-    
+
     const returnText = product.is_returnable ? 
         `↩️ Qaytarish: ${product.return_days} kun ichida` : 
         '🚫 Qaytarib bo\'lmaydi';
