@@ -98,6 +98,33 @@ ${warrantyText}
 ${returnText}`;
 }
 
+// Safe message editing function
+async function safeEditMessage(chatId, messageId, text, options = {}) {
+    try {
+        await bot.editMessageText(text, {
+            chat_id: chatId,
+            message_id: messageId,
+            ...options
+        });
+        return true;
+    } catch (error) {
+        if (error.message.includes('there is no text in the message to edit') || 
+            error.message.includes('message to edit not found') ||
+            error.message.includes('query is too old')) {
+            // Send new message if editing fails
+            try {
+                await bot.sendMessage(chatId, text, options);
+                return true;
+            } catch (sendError) {
+                console.error('Error sending new message:', sendError);
+                return false;
+            }
+        }
+        console.error('Error editing message:', error);
+        return false;
+    }
+}
+
 // Create or get user
 async function getOrCreateUser(chatId, userInfo) {
     try {
@@ -134,6 +161,76 @@ async function getOrCreateUser(chatId, userInfo) {
     } catch (error) {
         console.error('Error in getOrCreateUser:', error);
         return null;
+    }
+}
+
+// Handle product like/unlike
+async function handleProductLike(chatId, productId, isLike) {
+    try {
+        const user = await getOrCreateUser(chatId, {});
+        if (!user) return false;
+
+        if (isLike) {
+            // Add like
+            const { error: likeError } = await supabase
+                .from('product_likes')
+                .insert({
+                    user_id: user.id,
+                    product_id: productId
+                });
+
+            if (likeError && !likeError.message.includes('duplicate key')) {
+                console.error('Error adding like:', likeError);
+                return false;
+            }
+        } else {
+            // Remove like
+            const { error: unlikeError } = await supabase
+                .from('product_likes')
+                .delete()
+                .eq('user_id', user.id)
+                .eq('product_id', productId);
+
+            if (unlikeError) {
+                console.error('Error removing like:', unlikeError);
+                return false;
+            }
+        }
+
+        // Update product like count
+        const { data: likeCount } = await supabase
+            .from('product_likes')
+            .select('count', { count: 'exact', head: true })
+            .eq('product_id', productId);
+
+        await supabase
+            .from('products')
+            .update({ like_count: likeCount.count || 0 })
+            .eq('id', productId);
+
+        return true;
+    } catch (error) {
+        console.error('Error in handleProductLike:', error);
+        return false;
+    }
+}
+
+// Check if user liked product
+async function isProductLiked(chatId, productId) {
+    try {
+        const user = await getOrCreateUser(chatId, {});
+        if (!user) return false;
+
+        const { data, error } = await supabase
+            .from('product_likes')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('product_id', productId)
+            .single();
+
+        return !error && data;
+    } catch (error) {
+        return false;
     }
 }
 
@@ -180,11 +277,7 @@ Quyidagi tugmalardan birini tanlang:`;
 
     try {
         if (messageId) {
-            await bot.editMessageText(welcomeMessage, {
-                chat_id: chatId,
-                message_id: messageId,
-                ...options
-            });
+            await safeEditMessage(chatId, messageId, welcomeMessage, options);
         } else {
             await bot.sendMessage(chatId, welcomeMessage, options);
         }
@@ -198,10 +291,7 @@ async function showProfile(chatId, messageId) {
     try {
         const user = await getOrCreateUser(chatId, {});
         if (!user) {
-            await bot.editMessageText('❌ Profil ma\'lumotlarini olishda xatolik.', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await safeEditMessage(chatId, messageId, '❌ Profil ma\'lumotlarini olishda xatolik.');
             return;
         }
 
@@ -213,9 +303,7 @@ async function showProfile(chatId, messageId) {
 📧 Email: ${user.email}
 📅 Ro'yxatdan o'tgan: ${new Date(user.created_at).toLocaleDateString('uz-UZ')}`;
 
-        await bot.editMessageText(profileMessage, {
-            chat_id: chatId,
-            message_id: messageId,
+        await safeEditMessage(chatId, messageId, profileMessage, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [[
@@ -233,10 +321,7 @@ async function showMyOrders(chatId, messageId) {
     try {
         const user = await getOrCreateUser(chatId, {});
         if (!user) {
-            await bot.editMessageText('❌ Foydalanuvchi ma\'lumotlari topilmadi.', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await safeEditMessage(chatId, messageId, '❌ Foydalanuvchi ma\'lumotlari topilmadi.');
             return;
         }
 
@@ -251,17 +336,12 @@ async function showMyOrders(chatId, messageId) {
 
         if (error) {
             console.error('Error fetching orders:', error);
-            await bot.editMessageText('❌ Buyurtmalarni yuklashda xatolik.', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await safeEditMessage(chatId, messageId, '❌ Buyurtmalarni yuklashda xatolik.');
             return;
         }
 
         if (!orders || orders.length === 0) {
-            await bot.editMessageText('📭 Sizda hali buyurtmalar yo\'q.', {
-                chat_id: chatId,
-                message_id: messageId,
+            await safeEditMessage(chatId, messageId, '📭 Sizda hali buyurtmalar yo\'q.', {
                 reply_markup: {
                     inline_keyboard: [[
                         { text: '🛒 Xarid qilish', callback_data: 'buy_products' },
@@ -283,9 +363,7 @@ async function showMyOrders(chatId, messageId) {
             ]
         };
 
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
+        await safeEditMessage(chatId, messageId, message, {
             reply_markup: keyboard,
             parse_mode: 'Markdown'
         });
@@ -307,10 +385,7 @@ async function showOrderDetail(chatId, messageId, orderId) {
             .single();
 
         if (error || !order) {
-            await bot.editMessageText('❌ Buyurtma topilmadi.', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await safeEditMessage(chatId, messageId, '❌ Buyurtma topilmadi.');
             return;
         }
 
@@ -331,9 +406,7 @@ async function showOrderDetail(chatId, messageId, orderId) {
 📞 Telefon: ${order.phone}
 🏠 Manzil: ${order.address}`;
 
-        await bot.editMessageText(orderMessage, {
-            chat_id: chatId,
-            message_id: messageId,
+        await safeEditMessage(chatId, messageId, orderMessage, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [[
@@ -349,10 +422,7 @@ async function showOrderDetail(chatId, messageId, orderId) {
 // Admin panel
 async function showAdminPanel(chatId, messageId) {
     if (!isAdmin(chatId)) {
-        await bot.editMessageText('❌ Sizda admin huquqlari yo\'q.', {
-            chat_id: chatId,
-            message_id: messageId
-        });
+        await safeEditMessage(chatId, messageId, '❌ Sizda admin huquqlari yo\'q.');
         return;
     }
 
@@ -360,9 +430,7 @@ async function showAdminPanel(chatId, messageId) {
 
 Admin paneliga xush kelibsiz. Quyidagi amallardan birini tanlang:`;
 
-    await bot.editMessageText(adminMessage, {
-        chat_id: chatId,
-        message_id: messageId,
+    await safeEditMessage(chatId, messageId, adminMessage, {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
@@ -409,9 +477,7 @@ async function showAdminStats(chatId, messageId) {
 🗂 Jami kategoriyalar: ${categoriesResult.count || 0}
 💰 30 kunlik daromad: ${totalRevenue.toLocaleString()} so'm`;
 
-        await bot.editMessageText(statsMessage, {
-            chat_id: chatId,
-            message_id: messageId,
+        await safeEditMessage(chatId, messageId, statsMessage, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [[
@@ -430,9 +496,7 @@ async function handleBroadcast(chatId, messageId) {
 
     adminSessions.set(chatId, { state: ADMIN_STATES.AWAITING_BROADCAST_MESSAGE });
 
-    await bot.editMessageText('📢 *Xabar tarqatish*\n\nBarcha foydalanuvchilarga yubormoqchi bo\'lgan xabaringizni yozing:', {
-        chat_id: chatId,
-        message_id: messageId,
+    await safeEditMessage(chatId, messageId, '📢 *Xabar tarqatish*\n\nBarcha foydalanuvchilarga yubormoqchi bo\'lgan xabaringizni yozing:', {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [[
@@ -512,9 +576,7 @@ async function sendBroadcastMessage(chatId, message) {
 async function handleContactAdmin(chatId, messageId) {
     userSessions.set(chatId, { state: 'awaiting_contact_message' });
 
-    await bot.editMessageText('📞 *Murojaat*\n\nAdminlarga yubormoqchi bo\'lgan xabaringizni yozing:', {
-        chat_id: chatId,
-        message_id: messageId,
+    await safeEditMessage(chatId, messageId, '📞 *Murojaat*\n\nAdminlarga yubormoqchi bo\'lgan xabaringizni yozing:', {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [[
@@ -570,17 +632,12 @@ async function showCategories(chatId, messageId) {
 
         if (error) {
             console.error('Error fetching categories:', error);
-            await bot.editMessageText('❌ Kategoriyalarni yuklashda xatolik yuz berdi.', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await safeEditMessage(chatId, messageId, '❌ Kategoriyalarni yuklashda xatolik yuz berdi.');
             return;
         }
 
         if (!categories || categories.length === 0) {
-            await bot.editMessageText('📭 Hozircha kategoriyalar mavjud emas.', {
-                chat_id: chatId,
-                message_id: messageId,
+            await safeEditMessage(chatId, messageId, '📭 Hozircha kategoriyalar mavjud emas.', {
                 reply_markup: {
                     inline_keyboard: [[
                         { text: '🔙 Orqaga', callback_data: 'main_menu' }
@@ -601,9 +658,7 @@ async function showCategories(chatId, messageId) {
             ]
         };
 
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
+        await safeEditMessage(chatId, messageId, message, {
             reply_markup: keyboard,
             parse_mode: 'Markdown'
         });
@@ -624,17 +679,12 @@ async function showProducts(chatId, messageId, categoryId) {
 
         if (error) {
             console.error('Error fetching products:', error);
-            await bot.editMessageText('❌ Mahsulotlarni yuklashda xatolik yuz berdi.', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await safeEditMessage(chatId, messageId, '❌ Mahsulotlarni yuklashda xatolik yuz berdi.');
             return;
         }
 
         if (!products || products.length === 0) {
-            await bot.editMessageText('📭 Bu kategoriyada mahsulotlar mavjud emas.', {
-                chat_id: chatId,
-                message_id: messageId,
+            await safeEditMessage(chatId, messageId, '📭 Bu kategoriyada mahsulotlar mavjud emas.', {
                 reply_markup: {
                     inline_keyboard: [[
                         { text: '🔙 Kategoriyalarga qaytish', callback_data: 'buy_products' }
@@ -655,9 +705,7 @@ async function showProducts(chatId, messageId, categoryId) {
             ]
         };
 
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
+        await safeEditMessage(chatId, messageId, message, {
             reply_markup: keyboard,
             parse_mode: 'Markdown'
         });
@@ -677,47 +725,49 @@ async function showProductDetails(chatId, messageId, productId) {
 
         if (error || !product) {
             console.error('Error fetching product:', error);
-            await bot.editMessageText('❌ Mahsulot topilmadi.', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await safeEditMessage(chatId, messageId, '❌ Mahsulot topilmadi.');
             return;
         }
 
         const seller = product.users || null;
         const message = formatProductMessage(product, seller);
         
+        // Check if user liked this product
+        const isLiked = await isProductLiked(chatId, productId);
+        
         const keyboard = {
             inline_keyboard: [
                 [
                     { text: '🛒 Buyurtma berish', callback_data: `order_${productId}` }
                 ],
+                [
+                    { text: isLiked ? '❤️ Yoqtirilgan' : '🤍 Yoqtirish', callback_data: `like_${productId}` }
+                ],
                 [{ text: '🔙 Orqaga', callback_data: `category_${product.category_id}` }]
             ]
         };
 
-        // Send photo if available
+        // Try to send with photo first
         if (product.image_url) {
             try {
-                await bot.editMessageMedia({
-                    type: 'photo',
-                    media: product.image_url,
+                await bot.sendPhoto(chatId, product.image_url, {
                     caption: message,
-                    parse_mode: 'Markdown'
-                }, {
-                    chat_id: chatId,
-                    message_id: messageId,
+                    parse_mode: 'Markdown',
                     reply_markup: keyboard
                 });
+                // Delete the old message if photo sent successfully
+                try {
+                    await bot.deleteMessage(chatId, messageId);
+                } catch (deleteError) {
+                    // Ignore delete errors
+                }
                 return;
             } catch (photoError) {
                 console.log('Could not send photo, sending text instead');
             }
         }
 
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
+        await safeEditMessage(chatId, messageId, message, {
             reply_markup: keyboard,
             parse_mode: 'Markdown'
         });
@@ -734,9 +784,7 @@ async function startOrderProcess(chatId, messageId, productId) {
         orderData: {}
     });
 
-    await bot.editMessageText('👤 *Buyurtma berish*\n\nIltimos, to\'liq ismingizni kiriting (Ism Familiya):', {
-        chat_id: chatId,
-        message_id: messageId,
+    await safeEditMessage(chatId, messageId, '👤 *Buyurtma berish*\n\nIltimos, to\'liq ismingizni kiriting (Ism Familiya):', {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [[
@@ -945,9 +993,7 @@ async function handleWebhook(req, res) {
             if (data === 'main_menu') {
                 await handleStart(chatId, messageId);
             } else if (data === 'help') {
-                await bot.editMessageText('❓ *Yordam*\n\nBu bot Global Market do\'koni uchun mo\'ljallangan.\n\n/start - Botni qayta ishga tushirish\n/admin - Admin panel (faqat adminlar uchun)', {
-                    chat_id: chatId,
-                    message_id: messageId,
+                await safeEditMessage(chatId, messageId, '❓ *Yordam*\n\nBu bot Global Market do\'koni uchun mo\'ljallangan.\n\n/start - Botni qayta ishga tushirish\n/admin - Admin panel (faqat adminlar uchun)', {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
@@ -978,6 +1024,11 @@ async function handleWebhook(req, res) {
             } else if (data.startsWith('order_')) {
                 const productId = data.split('_')[1];
                 await startOrderProcess(chatId, messageId, productId);
+            } else if (data.startsWith('like_')) {
+                const productId = data.split('_')[1];
+                const isLiked = await isProductLiked(chatId, productId);
+                await handleProductLike(chatId, productId, !isLiked);
+                await showProductDetails(chatId, messageId, productId);
             } else if (data.startsWith('order_detail_')) {
                 const orderId = data.split('_')[2];
                 await showOrderDetail(chatId, messageId, orderId);
