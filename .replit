@@ -1,0 +1,29 @@
+modules = ["nodejs-20", "postgresql-16"]
+
+[nix]
+channel = "stable-24_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Telegram Bot Server"
+
+[[workflows.workflow]]
+name = "Telegram Bot Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm install node-telegram-bot-api @supabase/supabase-js && node api/webhook.js"
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
