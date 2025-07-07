@@ -1,4 +1,3 @@
-
 const { supabase } = require('./database');
 
 // Create or get user
@@ -44,25 +43,33 @@ async function getOrCreateUser(chatId, userInfo, requireRegistration = false) {
     }
 }
 
-// Register user with phone
+// Register user with phone number
 async function registerUserWithPhone(chatId, userInfo, phoneNumber) {
     try {
-        const fullName = userInfo.first_name + (userInfo.last_name ? ` ${userInfo.last_name}` : '');
-        
-        const { data: newUser, error: createError } = await supabase
+        const { data: existingUser } = await supabase
             .from('users')
-            .insert({
-                telegram_id: chatId.toString(),
-                full_name: fullName,
+            .select('*')
+            .eq('telegram_id', chatId)
+            .single();
+
+        if (existingUser) {
+            return existingUser;
+        }
+
+        const { data: newUser, error } = await supabase
+            .from('users')
+            .insert([{
+                telegram_id: chatId,
+                full_name: userInfo.first_name + (userInfo.last_name ? ' ' + userInfo.last_name : ''),
                 phone: phoneNumber,
                 type: 'phone',
-                is_temp: false
-            })
+                created_at: new Date().toISOString()
+            }])
             .select()
             .single();
 
-        if (createError) {
-            console.error('Error registering user with phone:', createError);
+        if (error) {
+            console.error('Error creating user with phone:', error);
             return null;
         }
 
@@ -73,4 +80,7 @@ async function registerUserWithPhone(chatId, userInfo, phoneNumber) {
     }
 }
 
-module.exports = { getOrCreateUser, registerUserWithPhone };
+module.exports = {
+    getOrCreateUser,
+    registerUserWithPhone
+};

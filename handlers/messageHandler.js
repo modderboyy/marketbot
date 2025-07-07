@@ -5,6 +5,9 @@ const { getOrCreateUser, registerUserWithPhone } = require('../utils/userUtils')
 const { processOrderData, sendContactToAdmins, sendBroadcastMessage } = require('../utils/orderUtils');
 const { isAdmin } = require('../utils/helpers');
 const { handleStart, showAdminPanel } = require('./uiHandler');
+const { registerUserWithPhone } = require('../utils/userUtils');
+const { isAdmin } = require('../utils/helpers');
+const { userSessions, adminSessions } = require('../utils/sessionManager');
 
 async function handleMessage(bot, message) {
     const chatId = message.chat.id;

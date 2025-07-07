@@ -177,55 +177,6 @@ async function showMyOrders(bot, chatId, messageId) {
     } catch (error) {
         console.error('Error in showMyOrders:', error);
     }
-} 'ma\'lumotlari topilmadi.');
-            return;
-        }
-
-        const { data: orders, error } = await supabase
-            .from('orders')
-            .select(`
-                *,
-                products (name, price)
-            `)
-            .eq('anon_temp_id', user.temp_id)
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error('Error fetching orders:', error);
-            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmalarni yuklashda xatolik.');
-            return;
-        }
-
-        if (!orders || orders.length === 0) {
-            await safeEditMessage(bot, chatId, messageId, '📭 Sizda hali buyurtmalar yo\'q.', {
-                reply_markup: {
-                    inline_keyboard: [[
-                        { text: '🛒 Xarid qilish', callback_data: 'buy_products' },
-                        { text: '🔙 Orqaga', callback_data: 'main_menu' }
-                    ]]
-                }
-            });
-            return;
-        }
-
-        const message = `📦 *Buyurtmalarim (${orders.length} ta)*\n\nQuyidagi buyurtmalardan birini tanlang:`;
-        
-        const keyboard = {
-            inline_keyboard: [
-                ...orders.map((order, index) => [
-                    { text: `${index + 1}. ${order.products?.name || 'Noma\'lum'} - ${order.status === 'completed' ? '✅' : order.status === 'confirmed' ? '⏳' : '📋'}`, callback_data: `order_detail_${order.id}` }
-                ]),
-                [{ text: '🔙 Orqaga', callback_data: 'main_menu' }]
-            ]
-        };
-
-        await safeEditMessage(bot, chatId, messageId, message, {
-            reply_markup: keyboard,
-            parse_mode: 'Markdown'
-        });
-    } catch (error) {
-        console.error('Error in showMyOrders:', error);
-    }
 }
 
 // Show order details

@@ -1,4 +1,3 @@
-
 const { supabase } = require('./database');
 const { userSessions, adminSessions } = require('./sessionManager');
 const { ORDER_STATES, ADMIN_STATES, ADMIN_IDS } = require('./constants');
@@ -92,7 +91,7 @@ async function processOrderData(bot, chatId, messageText) {
 async function completeOrder(bot, chatId, session) {
     try {
         const { orderData, productId } = session;
-        
+
         // Get user and update birth_date and profession
         const user = await getOrCreateUser(chatId, {});
         if (!user) {
@@ -218,7 +217,7 @@ async function completeOrder(bot, chatId, session) {
 // Confirm order
 async function confirmOrder(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require('./helpers');
-    
+
     // First, ask for delivery address
     adminSessions.set(chatId, { 
         state: 'awaiting_delivery_address', 
@@ -238,7 +237,7 @@ async function confirmOrder(bot, chatId, messageId, orderId) {
 // Reject order
 async function rejectOrder(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require('./helpers');
-    
+
     try {
         const { error } = await supabase
             .from('orders')
@@ -272,7 +271,7 @@ async function rejectOrder(bot, chatId, messageId, orderId) {
 // Send contact message to admins
 async function sendContactToAdmins(bot, chatId, message, userInfo) {
     const { userSessions } = require('./sessionManager');
-    
+
     try {
         const user = await getOrCreateUser(chatId, userInfo);
         const contactMessage = `📨 *Yangi murojaat*\n\n👤 Foydalanuvchi: ${user?.full_name || 'Noma\'lum'}\n🆔 Telegram ID: ${chatId}\n\n💬 Xabar:\n${message}`;
@@ -309,7 +308,7 @@ async function sendContactToAdmins(bot, chatId, message, userInfo) {
 // Send broadcast message
 async function sendBroadcastMessage(bot, chatId, message) {
     const { isAdmin } = require('./helpers');
-    
+
     if (!isAdmin(chatId)) return;
 
     try {
