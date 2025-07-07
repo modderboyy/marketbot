@@ -8,7 +8,34 @@ const { ADMIN_STATES, ADMIN_IDS } = require('../utils/constants');
 // Handle /start command
 async function handleStart(bot, chatId, messageId = null, userInfo = null) {
     if (userInfo) {
-        await getOrCreateUser(chatId, userInfo);
+        const user = await getOrCreateUser(chatId, userInfo, true);
+        if (!user) {
+            // User needs to register with phone
+            const registrationMessage = `🔐 *Ro'yxatdan o'tish*
+
+Botdan foydalanish uchun telefon raqamingizni ulashing.`;
+
+            const keyboard = {
+                keyboard: [[{
+                    text: '📞 Telefon raqamni ulashish',
+                    request_contact: true
+                }]],
+                one_time_keyboard: true,
+                resize_keyboard: true
+            };
+
+            const options = {
+                reply_markup: keyboard,
+                parse_mode: 'Markdown'
+            };
+
+            if (messageId) {
+                await bot.sendMessage(chatId, registrationMessage, options);
+            } else {
+                await bot.sendMessage(chatId, registrationMessage, options);
+            }
+            return;
+        }
     }
 
     const welcomeMessage = `🛍 *Global Market - Qashqadaryo, G'uzor*
@@ -92,7 +119,65 @@ async function showMyOrders(bot, chatId, messageId) {
     try {
         const user = await getOrCreateUser(chatId, {});
         if (!user) {
-            await safeEditMessage(bot, chatId, messageId, '❌ Foydalanuvchi ma\'lumotlari topilmadi.');
+            await safeEditMessage(bot, chatId, messageId, '❌ Foydalanuvchi ma\'lumotlarini olishda xatolik.');
+            return;
+        }
+
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select(`
+                *,
+                products (name, price)
+            `)
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching orders:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmalarni yuklashda xatolik.');
+            return;
+        }
+
+        if (!orders || orders.length === 0) {
+            await safeEditMessage(bot, chatId, messageId, '📭 Sizda hozircha buyurtmalar yo\'q.', {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🛒 Sotib olish', callback_data: 'buy_products' },
+                        { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                    ]]
+                }
+            });
+            return;
+        }
+
+        let orderMessage = '📦 *Buyurtmalarim*\n\n';
+        const keyboard = [];
+
+        orders.forEach((order, index) => {
+            const statusEmoji = order.status === 'pending' ? '⏳' :
+                               order.status === 'confirmed' ? '✅' :
+                               order.status === 'completed' ? '🎉' : '❌';
+            
+            orderMessage += `${statusEmoji} *${order.products?.name || 'Noma\'lum mahsulot'}*\n`;
+            orderMessage += `💰 ${order.total_amount} so'm\n`;
+            orderMessage += `📅 ${new Date(order.created_at).toLocaleDateString('uz-UZ')}\n\n`;
+
+            keyboard.push([{ 
+                text: `${index + 1}. ${order.products?.name || 'Buyurtma'} - ${statusEmoji}`, 
+                callback_data: `order_detail_${order.id}` 
+            }]);
+        });
+
+        keyboard.push([{ text: '🔙 Orqaga', callback_data: 'main_menu' }]);
+
+        await safeEditMessage(bot, chatId, messageId, orderMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard }
+        });
+    } catch (error) {
+        console.error('Error in showMyOrders:', error);
+    }
+} ma\'lumotlari topilmadi.');
             return;
         }
 

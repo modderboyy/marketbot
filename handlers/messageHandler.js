@@ -1,7 +1,7 @@
 
 const { userSessions, adminSessions } = require('../utils/sessionManager');
 const { ORDER_STATES, ADMIN_STATES } = require('../utils/constants');
-const { getOrCreateUser } = require('../utils/userUtils');
+const { getOrCreateUser, registerUserWithPhone } = require('../utils/userUtils');
 const { processOrderData, sendContactToAdmins, sendBroadcastMessage } = require('../utils/orderUtils');
 const { isAdmin } = require('../utils/helpers');
 const { handleStart, showAdminPanel } = require('./uiHandler');
@@ -13,6 +13,19 @@ async function handleMessage(bot, message) {
 
     if (messageText === '/start') {
         await handleStart(bot, chatId, null, userInfo);
+    } else if (message.contact && message.contact.user_id === chatId) {
+        // Handle phone number registration
+        const user = await registerUserWithPhone(chatId, userInfo, message.contact.phone_number);
+        if (user) {
+            await bot.sendMessage(chatId, '✅ Muvaffaqiyatli ro\'yxatdan o\'tdingiz!', {
+                reply_markup: {
+                    remove_keyboard: true
+                }
+            });
+            await handleStart(bot, chatId, null, userInfo);
+        } else {
+            await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tishda xatolik yuz berdi.');
+        }
     } else if (messageText === '/admin') {
         if (isAdmin(chatId)) {
             await showAdminPanel(bot, chatId, null);

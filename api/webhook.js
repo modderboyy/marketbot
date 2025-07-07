@@ -34,28 +34,20 @@ async function handleDeliveryAddress(chatId, messageText) {
         // Get order details to notify customer
         const { data: order } = await supabase
             .from('orders')
-            .select('anon_temp_id, products(name)')
+            .select('user_id, products(name), users!inner(telegram_id)')
             .eq('id', session.orderId)
             .single();
 
-        if (order) {
-            const { data: user } = await supabase
-                .from('users')
-                .select('telegram_id')
-                .eq('temp_id', order.anon_temp_id)
-                .single();
-
-            if (user) {
-                await bot.sendMessage(user.telegram_id, `✅ *Buyurtma tasdiqlandi*\n\n📦 Mahsulot: ${order.products?.name}\n🏠 Olish manzili: ${messageText.trim()}\n\nMahsulotni olish uchun yuqoridagi manzilga keling.\n\n*Faqatgina borib kelganingizdan so'ng pastdagi tugmani bosing!*`, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [[
-                            { text: '✅ Bordim', callback_data: `customer_arrived_${session.orderId}` },
-                            { text: '❌ Bormadim', callback_data: `customer_not_arrived_${session.orderId}` }
-                        ]]
-                    }
-                });
-            }
+        if (order && order.users) {
+            await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma tasdiqlandi*\n\n📦 Mahsulot: ${order.products?.name}\n🏠 Olish manzili: ${messageText.trim()}\n\nMahsulotni olish uchun yuqoridagi manzilga keling.\n\n*Faqatgina borib kelganingizdan so'ng pastdagi tugmani bosing!*`, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '✅ Bordim', callback_data: `customer_arrived_${session.orderId}` },
+                        { text: '❌ Bormadim', callback_data: `customer_not_arrived_${session.orderId}` }
+                    ]]
+                }
+            });
         }
 
         await bot.sendMessage(chatId, '✅ Buyurtma tasdiqlandi. Mijozga manzil yuborildi.');

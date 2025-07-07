@@ -191,22 +191,14 @@ async function handleProductDelivered(bot, chatId, messageId, orderId) {
         // Get order details to notify customer
         const { data: order } = await supabase
             .from('orders')
-            .select('anon_temp_id, products(name)')
+            .select('user_id, products(name), users!inner(telegram_id)')
             .eq('id', orderId)
             .single();
 
-        if (order) {
-            const { data: user } = await supabase
-                .from('users')
-                .select('telegram_id')
-                .eq('temp_id', order.anon_temp_id)
-                .single();
-
-            if (user) {
-                await bot.sendMessage(user.telegram_id, `✅ *Buyurtma yakunlandi*\n\n📦 Mahsulot: ${order.products?.name}\n\nRahmat! Bizdan xarid qilganingiz uchun tashakkur!`, {
-                    parse_mode: 'Markdown'
-                });
-            }
+        if (order && order.users) {
+            await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma yakunlandi*\n\n📦 Mahsulot: ${order.products?.name}\n\nRahmat! Bizdan xarid qilganingiz uchun tashakkur!`, {
+                parse_mode: 'Markdown'
+            });
         }
 
         await safeEditMessage(bot, chatId, messageId, '✅ Buyurtma muvaffaqiyatli yakunlandi. Mijozga xabar yuborildi.');

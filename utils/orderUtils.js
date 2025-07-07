@@ -127,6 +127,7 @@ async function completeOrder(bot, chatId, session) {
         const { data: newOrder, error } = await supabase
             .from('orders')
             .insert({
+                user_id: user.id,
                 product_id: productId,
                 full_name: orderData.full_name,
                 phone: orderData.phone,
@@ -252,22 +253,14 @@ async function rejectOrder(bot, chatId, messageId, orderId) {
         // Notify customer
         const { data: order } = await supabase
             .from('orders')
-            .select('anon_temp_id, products(name)')
+            .select('user_id, products(name), users!inner(telegram_id)')
             .eq('id', orderId)
             .single();
 
-        if (order) {
-            const { data: user } = await supabase
-                .from('users')
-                .select('telegram_id')
-                .eq('temp_id', order.anon_temp_id)
-                .single();
-
-            if (user) {
-                await bot.sendMessage(user.telegram_id, `❌ *Buyurtma rad etildi*\n\n📦 Mahsulot: ${order.products?.name}\n\nAfsuski, bu buyurtmani bajarib bo'lmaydi.`, {
-                    parse_mode: 'Markdown'
-                });
-            }
+        if (order && order.users) {
+            await bot.sendMessage(order.users.telegram_id, `❌ *Buyurtma rad etildi*\n\n📦 Mahsulot: ${order.products?.name}\n\nAfsuski, bu buyurtmani bajarib bo'lmaydi.`, {
+                parse_mode: 'Markdown'
+            });
         }
 
         await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma rad etildi. Mijozga xabar yuborildi.');
