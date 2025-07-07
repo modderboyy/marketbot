@@ -150,7 +150,7 @@ async function handleCustomerArrived(bot, chatId, messageId, orderId) {
                     }
                 });
             } catch (error) {
-                console.error(`Error sending to admin ${adminId}:`, error);rror);
+                console.error(`Error sending to admin ${adminId}:`, error);
             }
         }
 
