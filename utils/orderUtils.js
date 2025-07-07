@@ -12,15 +12,25 @@ async function startOrderProcess(bot, chatId, messageId, productId) {
         orderData: {}
     });
 
-    const { safeEditMessage } = require('./helpers');
-    await safeEditMessage(bot, chatId, messageId, '👤 *Buyurtma berish*\n\nIltimos, to\'liq ismingizni kiriting (Ism Familiya):', {
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [[
-                { text: '❌ Bekor qilish', callback_data: `product_${productId}` }
-            ]]
-        }
-    });
+    const orderMessage = '👤 *Buyurtma berish*\n\nIltimos, to\'liq ismingizni kiriting (Ism Familiya):';
+    const keyboard = {
+        inline_keyboard: [[
+            { text: '❌ Bekor qilish', callback_data: `product_${productId}` }
+        ]]
+    };
+
+    if (messageId) {
+        const { safeEditMessage } = require('./helpers');
+        await safeEditMessage(bot, chatId, messageId, orderMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        });
+    } else {
+        await bot.sendMessage(chatId, orderMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        });
+    }
 }
 
 // Process order data
@@ -58,7 +68,43 @@ async function processOrderData(bot, chatId, messageText) {
             break;
 
         case ORDER_STATES.AWAITING_ADDRESS:
-            orderData.address = messageText.trim();
+            session.state = ORDER_STATES.AWAITING_DISTRICT;
+            await bot.sendMessage(chatId, '🏠 Manzilingizni tanlang:', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'Qashqadaryo viloyati', callback_data: 'select_region_qashqadaryo' }],
+                        [{ text: '❌ Bekor qilish', callback_data: `product_${productId}` }]
+                    ]
+                }
+            });
+            break;
+
+        case ORDER_STATES.AWAITING_DISTRICT:
+            await bot.sendMessage(chatId, '🏙 Tumanni tanlang:', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'G\'uzor tumani', callback_data: 'select_district_guzor' }],
+                        [{ text: '❌ Bekor qilish', callback_data: `product_${productId}` }]
+                    ]
+                }
+            });
+            break;
+
+        case ORDER_STATES.AWAITING_NEIGHBORHOOD:
+            orderData.neighborhood = messageText.trim();
+            session.state = ORDER_STATES.AWAITING_STREET;
+            await bot.sendMessage(chatId, '🛣 Ko\'cha nomini kiriting:');
+            break;
+
+        case ORDER_STATES.AWAITING_STREET:
+            orderData.street = messageText.trim();
+            session.state = ORDER_STATES.AWAITING_HOUSE_NUMBER;
+            await bot.sendMessage(chatId, '🏠 Uy raqamini kiriting:');
+            break;
+
+        case ORDER_STATES.AWAITING_HOUSE_NUMBER:
+            orderData.house_number = messageText.trim();
+            orderData.address = `Qashqadaryo viloyati, G'uzor tumani, ${orderData.neighborhood} mahallasi, ${orderData.street} ko'chasi, ${orderData.house_number}-uy`;
             session.state = ORDER_STATES.AWAITING_PHONE;
             await bot.sendMessage(chatId, '📞 Telefon raqamingizni kiriting (+998XXXXXXXXX formatida):');
             break;
@@ -79,6 +125,24 @@ async function processOrderData(bot, chatId, messageText) {
                 await bot.sendMessage(chatId, '❌ Iltimos, to\'g\'ri miqdorni kiriting (musbat son).');
                 return;
             }
+
+            // Check stock quantity
+            const { data: product, error: stockError } = await supabase
+                .from('products')
+                .select('stock_quantity, name')
+                .eq('id', productId)
+                .single();
+
+            if (stockError || !product) {
+                await bot.sendMessage(chatId, '❌ Mahsulot ma\'lumotlarini olishda xatolik.');
+                return;
+            }
+
+            if (quantity > product.stock_quantity) {
+                await bot.sendMessage(chatId, `❌ Kechirasiz, omborda faqat ${product.stock_quantity} dona mavjud. Iltimos, kamroq miqdor kiriting:`);
+                return;
+            }
+
             orderData.quantity = quantity;
             await completeOrder(bot, chatId, session);
             break;
@@ -218,18 +282,14 @@ async function completeOrder(bot, chatId, session) {
 async function confirmOrder(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require('./helpers');
 
-    // First, ask for delivery address
-    adminSessions.set(chatId, { 
-        state: 'awaiting_delivery_address', 
-        orderId: orderId 
-    });
-
-    await safeEditMessage(bot, chatId, messageId, '🏠 *Buyurtmani tasdiqlash*\n\nMijozga yetkazish manzilini kiriting:', {
+    await safeEditMessage(bot, chatId, messageId, '🏠 *Buyurtmani tasdiqlash*\n\nYetkazish manzilini tanlang:', {
         parse_mode: 'Markdown',
         reply_markup: {
-            inline_keyboard: [[
-                { text: '❌ Bekor qilish', callback_data: 'admin_panel' }
-            ]]
+            inline_keyboard: [
+                [{ text: '🏢 Asosiy markaz', callback_data: `confirm_main_center_${orderId}` }],
+                [{ text: '✍️ Qo\'lda yozish', callback_data: `confirm_manual_address_${orderId}` }],
+                [{ text: '❌ Bekor qilish', callback_data: 'admin_panel' }]
+            ]
         }
     });
 }

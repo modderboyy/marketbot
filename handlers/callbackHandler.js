@@ -1,4 +1,3 @@
-
 const { userSessions, adminSessions } = require('../utils/sessionManager');
 const { ADMIN_STATES } = require('../utils/constants');
 const { isAdmin } = require('../utils/helpers');
@@ -83,32 +82,28 @@ async function handleCallback(bot, callbackQuery) {
     } else if (data.startsWith('order_detail_')) {
         const orderId = data.split('_')[2];
         await showOrderDetail(bot, chatId, messageId, orderId);
-    }
-    // Order management
-    else if (data.startsWith('confirm_order_')) {
-        const orderId = data.split('_')[2];
+    } else if (data.startsWith('confirm_order_')) {
+        const orderId = data.replace('confirm_order_', '');
         await confirmOrder(bot, chatId, messageId, orderId);
     } else if (data.startsWith('reject_order_')) {
-        const orderId = data.split('_')[2];
+        const orderId = data.replace('reject_order_', '');
         await rejectOrder(bot, chatId, messageId, orderId);
     } else if (data.startsWith('deliver_order_')) {
-        const orderId = data.split('_')[2];
+        const orderId = data.replace('deliver_order_', '');
         await deliverOrder(bot, chatId, messageId, orderId);
     } else if (data.startsWith('customer_arrived_')) {
-        const orderId = data.split('_')[2];
+        const orderId = data.replace('customer_arrived_', '');
         await handleCustomerArrived(bot, chatId, messageId, orderId);
     } else if (data.startsWith('customer_not_arrived_')) {
-        const orderId = data.split('_')[3];
+        const orderId = data.replace('customer_not_arrived_', '');
         await handleCustomerNotArrived(bot, chatId, messageId, orderId);
     } else if (data.startsWith('product_delivered_')) {
-        const orderId = data.split('_')[2];
+        const orderId = data.replace('product_delivered_', '');
         await handleProductDelivered(bot, chatId, messageId, orderId);
     } else if (data.startsWith('product_not_delivered_')) {
-        const orderId = data.split('_')[3];
+        const orderId = data.replace('product_not_delivered_', '');
         await handleProductNotDelivered(bot, chatId, messageId, orderId);
-    }
-    // Reply handler
-    else if (data.startsWith('reply_')) {
+    } else if (data.startsWith('reply_')) {
         const userChatId = data.split('_')[1];
         adminSessions.set(chatId, { 
             state: 'awaiting_reply_message', 
@@ -122,13 +117,50 @@ async function handleCallback(bot, callbackQuery) {
             }
         });
     }
+    // Address selection callbacks
+    else if (data === 'select_region_qashqadaryo') {
+        const { ORDER_STATES } = require('../utils/constants');
+        const session = userSessions.get(chatId);
+        if (session) {
+            session.state = ORDER_STATES.AWAITING_DISTRICT;
+            await safeEditMessage(bot, chatId, messageId, '🏙 Tumanni tanlang:', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'G\'uzor tumani', callback_data: 'select_district_guzor' }],
+                        [{ text: '❌ Bekor qilish', callback_data: `product_${session.productId}` }]
+                    ]
+                }
+            });
+        }
+    } else if (data === 'select_district_guzor') {
+        const { ORDER_STATES } = require('../utils/constants');
+        const session = userSessions.get(chatId);
+        if (session) {
+            session.state = ORDER_STATES.AWAITING_NEIGHBORHOOD;
+            await safeEditMessage(bot, chatId, messageId, '🏘 Mahalla nomini kiriting:', {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '❌ Bekor qilish', callback_data: `product_${session.productId}` }
+                    ]]
+                }
+            });
+        }
+    }
+    // Admin confirmation callbacks
+    else if (data.startsWith('confirm_main_center_')) {
+        const orderId = data.replace('confirm_main_center_', '');
+        await handleMainCenterConfirmation(bot, chatId, messageId, orderId);
+    } else if (data.startsWith('confirm_manual_address_')) {
+        const orderId = data.replace('confirm_manual_address_', '');
+        await handleManualAddressConfirmation(bot, chatId, messageId, orderId);
+    }
 }
 
 async function handleCustomerArrived(bot, chatId, messageId, orderId) {
     try {
         const { supabase } = require('../utils/database');
         const { ADMIN_IDS } = require('../utils/constants');
-        
+
         const { data: order, error } = await supabase
             .from('orders')
             .select('*, products(name)')
@@ -177,7 +209,7 @@ async function handleCustomerNotArrived(bot, chatId, messageId, orderId) {
 async function handleProductDelivered(bot, chatId, messageId, orderId) {
     try {
         const { supabase } = require('../utils/database');
-        
+
         const { error } = await supabase
             .from('orders')
             .update({ 

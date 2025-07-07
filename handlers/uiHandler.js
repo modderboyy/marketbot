@@ -607,12 +607,12 @@ async function showAdminOrderDetail(bot, chatId, messageId, orderId) {
 
 // Search products function
 async function handleSearch(bot, chatId, messageId) {
-    await safeEditMessage(bot, chatId, messageId, '🔍 *Qidiruv*\n\nMahsulot nomini yozing yoki inline qidiruv uchun @globalmarketshopbot ni ishlating:', {
+    await safeEditMessage(bot, chatId, messageId, '🔍 *Qidiruv*\n\nMahsulot nomini yozing yoki inline qidiruv uchun tugmani bosing:', {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: '🔍 Inline qidiruv', switch_inline_query_current_chat: '@globalmarketshopbot ' }
+                    { text: '🔍 Inline qidiruv', switch_inline_query_current_chat: '' }
                 ],
                 [
                     { text: '🔙 Orqaga', callback_data: 'main_menu' }

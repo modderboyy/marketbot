@@ -16,6 +16,10 @@ const ORDER_STATES = {
     AWAITING_ADDRESS: "awaiting_address",
     AWAITING_PHONE: "awaiting_phone",
     AWAITING_QUANTITY: "awaiting_quantity",
+    AWAITING_DISTRICT: "awaiting_district",
+    AWAITING_NEIGHBORHOOD: "awaiting_neighborhood",
+    AWAITING_STREET: "awaiting_street",
+    AWAITING_HOUSE_NUMBER: "awaiting_house_number"
 };
 
 const ADMIN_STATES = {

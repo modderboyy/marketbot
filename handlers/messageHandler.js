@@ -1,4 +1,3 @@
-
 const { userSessions, adminSessions } = require('../utils/sessionManager');
 const { ORDER_STATES, ADMIN_STATES } = require('../utils/constants');
 const { getOrCreateUser, registerUserWithPhone } = require('../utils/userUtils');
@@ -9,29 +8,68 @@ const { handleStart, showAdminPanel } = require('./uiHandler');
 async function handleMessage(bot, message) {
     const chatId = message.chat.id;
     const messageText = message.text;
-    const userInfo = message.from;
+    const userInfo = {
+        telegram_id: chatId,
+        first_name: message.from.first_name,
+        last_name: message.from.last_name,
+        username: message.from.username
+    };
 
-    if (messageText === '/start') {
-        await handleStart(bot, chatId, null, userInfo);
-    } else if (message.contact && message.contact.user_id === chatId) {
-        // Handle phone number registration
-        const user = await registerUserWithPhone(chatId, userInfo, message.contact.phone_number);
+    // Handle contact sharing
+    if (message.contact) {
+        const user = await getOrCreateUser(chatId, {
+            ...userInfo,
+            phone: message.contact.phone_number
+        });
+
         if (user) {
-            await bot.sendMessage(chatId, '✅ Muvaffaqiyatli ro\'yxatdan o\'tdingiz!', {
-                reply_markup: {
-                    remove_keyboard: true
-                }
-            });
             await handleStart(bot, chatId, null, userInfo);
-        } else {
-            await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tishda xatolik yuz berdi.');
         }
-    } else if (messageText === '/admin') {
-        if (isAdmin(chatId)) {
+        return;
+    }
+
+    // Handle commands
+    if (messageText && messageText.startsWith('/')) {
+        if (messageText.startsWith('/start')) {
+            // Check for start parameter
+            const parts = messageText.split(' ');
+            if (parts.length > 1 && parts[1].startsWith('order_')) {
+                const productId = parts[1].replace('order_', '');
+                // Ensure user is registered first
+                const user = await getOrCreateUser(chatId, userInfo, true);
+                if (!user) {
+                    // User needs to register with phone
+                    const registrationMessage = `🔐 *Ro'yxatdan o'tish*
+
+Buyurtma berish uchun telefon raqamingizni ulashing.`;
+
+                    const keyboard = {
+                        keyboard: [[{
+                            text: '📞 Telefon raqamni ulashish',
+                            request_contact: true
+                        }]],
+                        one_time_keyboard: true,
+                        resize_keyboard: true
+                    };
+
+                    await bot.sendMessage(chatId, registrationMessage, {
+                        reply_markup: keyboard,
+                        parse_mode: 'Markdown'
+                    });
+                    return;
+                }
+                // Start order process directly
+                const { startOrderProcess } = require('../utils/orderUtils');
+                await startOrderProcess(bot, chatId, null, productId);
+                return;
+            }
+            await handleStart(bot, chatId, null, userInfo);
+        } else if (messageText === '/admin' && isAdmin(chatId)) {
             await showAdminPanel(bot, chatId, null);
         } else {
-            await bot.sendMessage(chatId, '❌ Sizda admin huquqlari yo\'q.');
+            await bot.sendMessage(chatId, 'Noma\'lum buyruq. /start tugmasini bosing.');
         }
+        return;
     } else {
         // Check for session states
         const session = userSessions.get(chatId);
@@ -62,9 +100,9 @@ async function sendReplyToUser(bot, adminChatId, message, userChatId) {
         await bot.sendMessage(userChatId, `📨 *Admin javobi:*\n\n${message}`, {
             parse_mode: 'Markdown'
         });
-        
+
         await bot.sendMessage(adminChatId, '✅ Javob yuborildi.');
-        
+
         // Clear admin session
         adminSessions.delete(adminChatId);
     } catch (error) {

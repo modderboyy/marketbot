@@ -65,7 +65,7 @@ async function handleInlineQuery(bot, inlineQuery) {
     
     if (!query) {
         await bot.answerInlineQuery(inlineQuery.id, [], {
-            switch_pm_text: "🔍 Qidiruv uchun mahsulot nomini yozing",
+            switch_pm_text: "🔍 Mahsulot qidirish",
             switch_pm_parameter: "search"
         });
         return;
@@ -76,9 +76,9 @@ async function handleInlineQuery(bot, inlineQuery) {
             .from('products')
             .select('*')
             .eq('is_active', true)
-            .ilike('name', `%${query}%`)
+            .or(`name.ilike.%${query}%,author.ilike.%${query}%`)
             .order('name')
-            .limit(20);
+            .limit(15);
 
         if (error) {
             console.error('Error searching products:', error);
@@ -90,14 +90,14 @@ async function handleInlineQuery(bot, inlineQuery) {
             type: 'article',
             id: product.id,
             title: product.name,
-            description: `💰 ${product.price} so'm - ${product.description?.substring(0, 100)}...`,
+            description: `💰 ${product.price} so'm | 👨‍💼 ${product.author || 'Noma\'lum'}`,
             input_message_content: {
-                message_text: `📦 *${product.name}*\n\n💰 Narx: ${product.price} so'm\n📝 Ta'rif: ${product.description}\n\n🛒 Buyurtma berish uchun @globalmarketshopbot ga o'ting`,
+                message_text: `📦 *${product.name}*\n\n💰 Narx: ${product.price} so'm\n👨‍💼 Muallif: ${product.author || 'Noma\'lum'}\n📝 Ta'rif: ${product.description?.substring(0, 150)}...\n\n🛒 Buyurtma berish uchun pastdagi tugmani bosing`,
                 parse_mode: 'Markdown'
             },
             reply_markup: {
                 inline_keyboard: [[
-                    { text: '🛒 Buyurtma berish', url: `https://t.me/globalmarketshopbot?start=product_${product.id}` }
+                    { text: '🛒 Buyurtma berish', url: `https://t.me/globalmarketshopbot?start=order_${product.id}` }
                 ]]
             }
         }));
@@ -105,7 +105,7 @@ async function handleInlineQuery(bot, inlineQuery) {
         await bot.answerInlineQuery(inlineQuery.id, results, {
             cache_time: 300,
             switch_pm_text: "🏪 Do'konga o'tish",
-            switch_pm_parameter: "shop"
+            switch_pm_parameter: "main"
         });
     } catch (error) {
         console.error('Error in handleInlineQuery:', error);
