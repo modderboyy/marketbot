@@ -1,3 +1,4 @@
+
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -6,25 +7,60 @@ const BOT_TOKEN = process.env.BOT_TOKEN || 'your_bot_token_here';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://tdfphvmmwfqhnzfggpln.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZnBodm1td2ZxaG56ZmdncGxuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3MzcwNjYsImV4cCI6MjA2NzMxMzA2Nn0.0H8_6f07k0vmjOVnqqXgqBYwIEu50Qqs_tExPv1k7DQ';
 
+// Admin IDs
+const ADMIN_IDS = ['6295092422', '12345678'];
+
 // Initialize Supabase client
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN);
 
-// User session storage for order flow
+// User session storage
 const userSessions = new Map();
+const adminSessions = new Map();
 
 // Order flow states
 const ORDER_STATES = {
     AWAITING_NAME: 'awaiting_name',
+    AWAITING_BIRTH_DATE: 'awaiting_birth_date',
+    AWAITING_PROFESSION: 'awaiting_profession',
     AWAITING_ADDRESS: 'awaiting_address',
     AWAITING_PHONE: 'awaiting_phone',
     AWAITING_QUANTITY: 'awaiting_quantity'
 };
 
+// Admin states
+const ADMIN_STATES = {
+    AWAITING_BROADCAST_MESSAGE: 'awaiting_broadcast_message'
+};
+
 // Utility functions
-function formatProductMessage(product) {
+function isAdmin(userId) {
+    return ADMIN_IDS.includes(userId.toString());
+}
+
+function validatePhoneNumber(phone) {
+    const phoneRegex = /^\+998\d{9}$/;
+    return phoneRegex.test(phone);
+}
+
+function validateBirthDate(dateStr) {
+    const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
+    if (!dateRegex.test(dateStr)) return false;
+    
+    const [day, month, year] = dateStr.split('.').map(Number);
+    const date = new Date(year, month - 1, day);
+    const now = new Date();
+    
+    return date.getFullYear() === year && 
+           date.getMonth() === month - 1 && 
+           date.getDate() === day &&
+           date <= now &&
+           year >= 1900;
+}
+
+function formatProductMessage(product, seller = null) {
     const deliveryText = product.has_delivery ? 
         `🚚 Yetkazib berish: ${product.delivery_price > 0 ? `${product.delivery_price} so'm` : 'Bepul'}` : 
         '🚫 Yetkazib berish yo\'q';
@@ -37,15 +73,24 @@ function formatProductMessage(product) {
         `↩️ Qaytarish: ${product.return_days} kun ichida` : 
         '🚫 Qaytarib bo\'lmaydi';
 
+    const sellerInfo = seller ? 
+        `👤 Sotuvchi: ${seller.full_name}\n📞 Tel: ${seller.phone}` : 
+        '👤 Sotuvchi: Ma\'lumot yo\'q';
+
     return `📦 *${product.name}*
 
 💰 Narx: ${product.price} so'm
 📝 Ta'rif: ${product.description}
+👨‍💼 Muallif: ${product.author || 'Noma\'lum'}
+🏷 Brend: ${product.brand || 'Noma\'lum'}
+📦 Omborda: ${product.stock_quantity || 0} dona
 
 📊 Statistika:
 ⭐ Reyting: ${product.rating || 4.5}/5
 🛒 Buyurtmalar: ${product.order_count || 0}
 ❤️ Yoqtirishlar: ${product.like_count || 0}
+
+${sellerInfo}
 
 🚚 Yetkazib berish va xizmatlar:
 ${deliveryText}
@@ -53,84 +98,464 @@ ${warrantyText}
 ${returnText}`;
 }
 
-function validatePhoneNumber(phone) {
-    const phoneRegex = /^\+998\d{9}$/;
-    return phoneRegex.test(phone);
+// Create or get user
+async function getOrCreateUser(chatId, userInfo) {
+    try {
+        const { data: existingUser, error: getUserError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('telegram_id', chatId.toString())
+            .single();
+
+        if (existingUser) {
+            return existingUser;
+        }
+
+        // Create new user
+        const tempId = `temp_${chatId}`;
+        const { data: newUser, error: createError } = await supabase
+            .from('users')
+            .insert({
+                telegram_id: chatId.toString(),
+                full_name: userInfo.first_name + (userInfo.last_name ? ` ${userInfo.last_name}` : ''),
+                email: `${tempId}@temp.local`,
+                temp_id: tempId,
+                is_temp: true
+            })
+            .select()
+            .single();
+
+        if (createError) {
+            console.error('Error creating user:', createError);
+            return null;
+        }
+
+        return newUser;
+    } catch (error) {
+        console.error('Error in getOrCreateUser:', error);
+        return null;
+    }
 }
 
 // Handle /start command
-async function handleStart(chatId, messageId = null) {
-    const welcomeMessage = `🛍 Xush kelibsiz!
+async function handleStart(chatId, messageId = null, userInfo = null) {
+    // Create or get user
+    if (userInfo) {
+        await getOrCreateUser(chatId, userInfo);
+    }
 
-Bizning onlayn do'konimizga xush kelibsiz. Bu yerda siz turli xil mahsulotlarni ko'rishingiz va buyurtma berishingiz mumkin.
+    const welcomeMessage = `🛍 *Global Market - Qashqadaryo, G'uzor*
+
+Bizning onlayn do'konimizga xush kelibsiz! Bu yerda siz turli xil mahsulotlarni ko'rishingiz va buyurtma berishingiz mumkin.
 
 Quyidagi tugmalardan birini tanlang:`;
 
     const keyboard = {
-        inline_keyboard: [[
-            { text: '🛒 Sotib olish', callback_data: 'buy_products' }
-        ], [
-            { text: '❓ Yordam', callback_data: 'help' }
-        ]]
+        inline_keyboard: [
+            [
+                { text: '🛒 Sotib olish', callback_data: 'buy_products' }
+            ],
+            [
+                { text: '📦 Buyurtmalarim', callback_data: 'my_orders' },
+                { text: '👤 Profilim', callback_data: 'my_profile' }
+            ],
+            [
+                { text: '📞 Murojaat', callback_data: 'contact_admin' },
+                { text: '❓ Yordam', callback_data: 'help' }
+            ]
+        ]
     };
+
+    // Add admin panel for admins
+    if (isAdmin(chatId)) {
+        keyboard.inline_keyboard.push([
+            { text: '⚙️ Admin Panel', callback_data: 'admin_panel' }
+        ]);
+    }
 
     const options = {
         reply_markup: keyboard,
         parse_mode: 'Markdown'
     };
 
-    if (messageId) {
-        await bot.editMessageText(welcomeMessage, {
-            chat_id: chatId,
-            message_id: messageId,
-            ...options
-        });
-    } else {
-        await bot.sendMessage(chatId, welcomeMessage, options);
+    try {
+        if (messageId) {
+            await bot.editMessageText(welcomeMessage, {
+                chat_id: chatId,
+                message_id: messageId,
+                ...options
+            });
+        } else {
+            await bot.sendMessage(chatId, welcomeMessage, options);
+        }
+    } catch (error) {
+        console.error('Error in handleStart:', error);
     }
 }
 
-// Handle /help command
-async function handleHelp(chatId, messageId = null) {
-    const helpMessage = `❓ *Yordam*
+// Show user profile
+async function showProfile(chatId, messageId) {
+    try {
+        const user = await getOrCreateUser(chatId, {});
+        if (!user) {
+            await bot.editMessageText('❌ Profil ma\'lumotlarini olishda xatolik.', {
+                chat_id: chatId,
+                message_id: messageId
+            });
+            return;
+        }
 
-Bu bot orqali siz:
-• 🛒 Mahsulotlarni ko'rishingiz
-• 📝 Buyurtma berishingiz
-• ❤️ Mahsulotlarni yoqtirishingiz
+        const profileMessage = `👤 *Profil Ma'lumotlari*
 
-*Buyruqlar:*
-/start - Botni ishga tushirish
-/help - Yordam olish
+📛 Ism: ${user.full_name || 'Kiritilmagan'}
+🆔 Telegram ID: ${user.telegram_id}
+🏷 Temp ID: ${user.temp_id}
+📧 Email: ${user.email}
+📅 Ro'yxatdan o'tgan: ${new Date(user.created_at).toLocaleDateString('uz-UZ')}`;
 
-*Qanday foydalanish:*
-1. "Sotib olish" tugmasini bosing
-2. Kategoriyani tanlang
-3. Mahsulotni tanlang
-4. "Buyurtma berish" tugmasini bosing
-5. Ma'lumotlaringizni kiriting
-
-Savollaringiz bo'lsa, biz bilan bog'laning!`;
-
-    const keyboard = {
-        inline_keyboard: [[
-            { text: '🔙 Orqaga', callback_data: 'main_menu' }
-        ]]
-    };
-
-    const options = {
-        reply_markup: keyboard,
-        parse_mode: 'Markdown'
-    };
-
-    if (messageId) {
-        await bot.editMessageText(helpMessage, {
+        await bot.editMessageText(profileMessage, {
             chat_id: chatId,
             message_id: messageId,
-            ...options
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                ]]
+            }
         });
-    } else {
-        await bot.sendMessage(chatId, helpMessage, options);
+    } catch (error) {
+        console.error('Error in showProfile:', error);
+    }
+}
+
+// Show user orders
+async function showMyOrders(chatId, messageId) {
+    try {
+        const user = await getOrCreateUser(chatId, {});
+        if (!user) {
+            await bot.editMessageText('❌ Foydalanuvchi ma\'lumotlari topilmadi.', {
+                chat_id: chatId,
+                message_id: messageId
+            });
+            return;
+        }
+
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select(`
+                *,
+                products (name, price)
+            `)
+            .eq('anon_temp_id', user.temp_id)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching orders:', error);
+            await bot.editMessageText('❌ Buyurtmalarni yuklashda xatolik.', {
+                chat_id: chatId,
+                message_id: messageId
+            });
+            return;
+        }
+
+        if (!orders || orders.length === 0) {
+            await bot.editMessageText('📭 Sizda hali buyurtmalar yo\'q.', {
+                chat_id: chatId,
+                message_id: messageId,
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🛒 Xarid qilish', callback_data: 'buy_products' },
+                        { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                    ]]
+                }
+            });
+            return;
+        }
+
+        const message = `📦 *Buyurtmalarim (${orders.length} ta)*\n\nQuyidagi buyurtmalardan birini tanlang:`;
+        
+        const keyboard = {
+            inline_keyboard: [
+                ...orders.map((order, index) => [
+                    { text: `${index + 1}. ${order.products?.name || 'Noma\'lum'} - ${order.status === 'completed' ? '✅' : '⏳'}`, callback_data: `order_detail_${order.id}` }
+                ]),
+                [{ text: '🔙 Orqaga', callback_data: 'main_menu' }]
+            ]
+        };
+
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: keyboard,
+            parse_mode: 'Markdown'
+        });
+    } catch (error) {
+        console.error('Error in showMyOrders:', error);
+    }
+}
+
+// Show order details
+async function showOrderDetail(chatId, messageId, orderId) {
+    try {
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select(`
+                *,
+                products (name, price)
+            `)
+            .eq('id', orderId)
+            .single();
+
+        if (error || !order) {
+            await bot.editMessageText('❌ Buyurtma topilmadi.', {
+                chat_id: chatId,
+                message_id: messageId
+            });
+            return;
+        }
+
+        const statusText = order.status === 'completed' ? '✅ Yetkazildi' : 
+                          order.status === 'cancelled' ? '❌ Bekor qilindi' : '⏳ Jarayonda';
+
+        const orderMessage = `📦 *Buyurtma Tafsilotlari*
+
+🆔 Buyurtma ID: ${order.id}
+📦 Mahsulot: ${order.products?.name || 'Noma\'lum'}
+🔢 Miqdor: ${order.quantity}
+💰 Jami summa: ${order.total_amount} so'm
+📊 Holat: ${statusText}
+📅 Buyurtma vaqti: ${new Date(order.created_at).toLocaleDateString('uz-UZ')}
+
+👤 Mijoz ma'lumotlari:
+📛 F.I.O: ${order.full_name}
+📞 Telefon: ${order.phone}
+🏠 Manzil: ${order.address}`;
+
+        await bot.editMessageText(orderMessage, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Buyurtmalarga qaytish', callback_data: 'my_orders' }
+                ]]
+            }
+        });
+    } catch (error) {
+        console.error('Error in showOrderDetail:', error);
+    }
+}
+
+// Admin panel
+async function showAdminPanel(chatId, messageId) {
+    if (!isAdmin(chatId)) {
+        await bot.editMessageText('❌ Sizda admin huquqlari yo\'q.', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+        return;
+    }
+
+    const adminMessage = `⚙️ *Admin Panel*
+
+Admin paneliga xush kelibsiz. Quyidagi amallardan birini tanlang:`;
+
+    await bot.editMessageText(adminMessage, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '📊 Statistika', callback_data: 'admin_stats' },
+                    { text: '📢 Xabar tarqatish', callback_data: 'admin_broadcast' }
+                ],
+                [
+                    { text: '📨 Murojaatlar', callback_data: 'admin_contacts' },
+                    { text: '📦 Buyurtmalar', callback_data: 'admin_orders' }
+                ],
+                [
+                    { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                ]
+            ]
+        }
+    });
+}
+
+// Admin statistics
+async function showAdminStats(chatId, messageId) {
+    if (!isAdmin(chatId)) return;
+
+    try {
+        const [usersResult, ordersResult, productsResult, categoriesResult] = await Promise.all([
+            supabase.from('users').select('count', { count: 'exact', head: true }),
+            supabase.from('orders').select('count', { count: 'exact', head: true }),
+            supabase.from('products').select('count', { count: 'exact', head: true }),
+            supabase.from('categories').select('count', { count: 'exact', head: true })
+        ]);
+
+        const { data: recentOrders } = await supabase
+            .from('orders')
+            .select('total_amount')
+            .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+        const totalRevenue = recentOrders?.reduce((sum, order) => sum + parseFloat(order.total_amount), 0) || 0;
+
+        const statsMessage = `📊 *Statistika*
+
+👥 Jami foydalanuvchilar: ${usersResult.count || 0}
+📦 Jami buyurtmalar: ${ordersResult.count || 0}
+🛍 Jami mahsulotlar: ${productsResult.count || 0}
+🗂 Jami kategoriyalar: ${categoriesResult.count || 0}
+💰 30 kunlik daromad: ${totalRevenue.toLocaleString()} so'm`;
+
+        await bot.editMessageText(statsMessage, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                ]]
+            }
+        });
+    } catch (error) {
+        console.error('Error in showAdminStats:', error);
+    }
+}
+
+// Handle broadcast
+async function handleBroadcast(chatId, messageId) {
+    if (!isAdmin(chatId)) return;
+
+    adminSessions.set(chatId, { state: ADMIN_STATES.AWAITING_BROADCAST_MESSAGE });
+
+    await bot.editMessageText('📢 *Xabar tarqatish*\n\nBarcha foydalanuvchilarga yubormoqchi bo\'lgan xabaringizni yozing:', {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[
+                { text: '❌ Bekor qilish', callback_data: 'admin_panel' }
+            ]]
+        }
+    });
+}
+
+// Send broadcast message
+async function sendBroadcastMessage(chatId, message) {
+    if (!isAdmin(chatId)) return;
+
+    try {
+        const { data: users, error } = await supabase
+            .from('users')
+            .select('telegram_id')
+            .not('telegram_id', 'is', null);
+
+        if (error) {
+            await bot.sendMessage(chatId, '❌ Foydalanuvchilar ro\'yxatini olishda xatolik.');
+            return;
+        }
+
+        let sentCount = 0;
+        let errorCount = 0;
+
+        const statusMessage = await bot.sendMessage(chatId, `📤 Xabar yuborilmoqda...\n\n✅ Yuborildi: 0\n❌ Xato: 0\n📊 Jami: ${users.length}`);
+
+        for (const user of users) {
+            try {
+                await bot.sendMessage(user.telegram_id, `📢 *Xabar*\n\n${message}`, { parse_mode: 'Markdown' });
+                sentCount++;
+            } catch (error) {
+                errorCount++;
+                console.error(`Error sending to ${user.telegram_id}:`, error);
+            }
+
+            // Update status every 10 messages
+            if ((sentCount + errorCount) % 10 === 0) {
+                try {
+                    await bot.editMessageText(
+                        `📤 Xabar yuborilmoqda...\n\n✅ Yuborildi: ${sentCount}\n❌ Xato: ${errorCount}\n📊 Jami: ${users.length}`,
+                        {
+                            chat_id: chatId,
+                            message_id: statusMessage.message_id
+                        }
+                    );
+                } catch (editError) {
+                    // Ignore edit errors
+                }
+            }
+        }
+
+        await bot.editMessageText(
+            `✅ *Xabar tarqatish yakunlandi*\n\n✅ Muvaffaqiyatli: ${sentCount}\n❌ Xato: ${errorCount}\n📊 Jami: ${users.length}`,
+            {
+                chat_id: chatId,
+                message_id: statusMessage.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                    ]]
+                }
+            }
+        );
+
+        adminSessions.delete(chatId);
+    } catch (error) {
+        console.error('Error in sendBroadcastMessage:', error);
+        await bot.sendMessage(chatId, '❌ Xabar tarqatishda xatolik yuz berdi.');
+    }
+}
+
+// Contact admin
+async function handleContactAdmin(chatId, messageId) {
+    userSessions.set(chatId, { state: 'awaiting_contact_message' });
+
+    await bot.editMessageText('📞 *Murojaat*\n\nAdminlarga yubormoqchi bo\'lgan xabaringizni yozing:', {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[
+                { text: '❌ Bekor qilish', callback_data: 'main_menu' }
+            ]]
+        }
+    });
+}
+
+// Send contact message to admins
+async function sendContactToAdmins(chatId, message, userInfo) {
+    try {
+        const user = await getOrCreateUser(chatId, userInfo);
+        const contactMessage = `📨 *Yangi murojaat*\n\n👤 Foydalanuvchi: ${user?.full_name || 'Noma\'lum'}\n🆔 Telegram ID: ${chatId}\n\n💬 Xabar:\n${message}`;
+
+        for (const adminId of ADMIN_IDS) {
+            try {
+                await bot.sendMessage(adminId, contactMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '↩️ Javob berish', callback_data: `reply_${chatId}` }
+                        ]]
+                    }
+                });
+            } catch (error) {
+                console.error(`Error sending to admin ${adminId}:`, error);
+            }
+        }
+
+        await bot.sendMessage(chatId, '✅ Xabaringiz adminlarga yuborildi. Tez orada javob berishadi.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🏠 Bosh sahifa', callback_data: 'main_menu' }
+                ]]
+            }
+        });
+
+        userSessions.delete(chatId);
+    } catch (error) {
+        console.error('Error in sendContactToAdmins:', error);
     }
 }
 
@@ -184,10 +609,6 @@ async function showCategories(chatId, messageId) {
         });
     } catch (error) {
         console.error('Error in showCategories:', error);
-        await bot.editMessageText('❌ Xatolik yuz berdi.', {
-            chat_id: chatId,
-            message_id: messageId
-        });
     }
 }
 
@@ -242,10 +663,6 @@ async function showProducts(chatId, messageId, categoryId) {
         });
     } catch (error) {
         console.error('Error in showProducts:', error);
-        await bot.editMessageText('❌ Xatolik yuz berdi.', {
-            chat_id: chatId,
-            message_id: messageId
-        });
     }
 }
 
@@ -254,7 +671,7 @@ async function showProductDetails(chatId, messageId, productId) {
     try {
         const { data: product, error } = await supabase
             .from('products')
-            .select('*')
+            .select('*, users!products_seller_id_fkey(full_name, phone)')
             .eq('id', productId)
             .single();
 
@@ -267,27 +684,36 @@ async function showProductDetails(chatId, messageId, productId) {
             return;
         }
 
-        // Check if user has liked this product
-        const { data: userLike } = await supabase
-            .from('product_likes')
-            .select('*')
-            .eq('product_id', productId)
-            .eq('user_id', chatId.toString())
-            .single();
-
-        const likeButtonText = userLike ? '💔 Like olib tashlash' : '❤️ Yoqtirish';
-        
-        const message = formatProductMessage(product);
+        const seller = product.users || null;
+        const message = formatProductMessage(product, seller);
         
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '🛒 Buyurtma berish', callback_data: `order_${productId}` },
-                    { text: likeButtonText, callback_data: `like_${productId}` }
+                    { text: '🛒 Buyurtma berish', callback_data: `order_${productId}` }
                 ],
                 [{ text: '🔙 Orqaga', callback_data: `category_${product.category_id}` }]
             ]
         };
+
+        // Send photo if available
+        if (product.image_url) {
+            try {
+                await bot.editMessageMedia({
+                    type: 'photo',
+                    media: product.image_url,
+                    caption: message,
+                    parse_mode: 'Markdown'
+                }, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    reply_markup: keyboard
+                });
+                return;
+            } catch (photoError) {
+                console.log('Could not send photo, sending text instead');
+            }
+        }
 
         await bot.editMessageText(message, {
             chat_id: chatId,
@@ -297,139 +723,6 @@ async function showProductDetails(chatId, messageId, productId) {
         });
     } catch (error) {
         console.error('Error in showProductDetails:', error);
-        await bot.editMessageText('❌ Xatolik yuz berdi.', {
-            chat_id: chatId,
-            message_id: messageId
-        });
-    }
-}
-
-// Handle like product
-async function handleLikeProduct(chatId, callbackQueryId, productId) {
-    try {
-        // Check if user already liked this product
-        const { data: existingLike, error: checkError } = await supabase
-            .from('product_likes')
-            .select('*')
-            .eq('product_id', productId)
-            .eq('user_id', chatId.toString())
-            .single();
-
-        if (checkError && checkError.code !== 'PGRST116') {
-            console.error('Error checking existing like:', checkError);
-            await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
-            return;
-        }
-
-        if (existingLike) {
-            // User already liked - remove like
-            const { error: deleteError } = await supabase
-                .from('product_likes')
-                .delete()
-                .eq('product_id', productId)
-                .eq('user_id', chatId.toString());
-
-            if (deleteError) {
-                console.error('Error removing like:', deleteError);
-                await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
-                return;
-            }
-
-            // Decrement like count
-            const { data: product, error: getError } = await supabase
-                .from('products')
-                .select('like_count')
-                .eq('id', productId)
-                .single();
-
-            if (!getError && product) {
-                const newLikeCount = Math.max(0, (product.like_count || 0) - 1);
-                await supabase
-                    .from('products')
-                    .update({ like_count: newLikeCount })
-                    .eq('id', productId);
-            }
-
-            await bot.answerCallbackQuery(callbackQueryId, { text: '💔 Like olib tashlandi!' });
-        } else {
-            // User hasn't liked - add like
-            const { error: insertError } = await supabase
-                .from('product_likes')
-                .insert({
-                    product_id: productId,
-                    user_id: chatId.toString(),
-                    created_at: new Date().toISOString()
-                });
-
-            if (insertError) {
-                console.error('Error adding like:', insertError);
-                await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
-                return;
-            }
-
-            // Increment like count
-            const { data: product, error: getError } = await supabase
-                .from('products')
-                .select('like_count')
-                .eq('id', productId)
-                .single();
-
-            if (!getError && product) {
-                const newLikeCount = (product.like_count || 0) + 1;
-                await supabase
-                    .from('products')
-                    .update({ like_count: newLikeCount })
-                    .eq('id', productId);
-            }
-
-            await bot.answerCallbackQuery(callbackQueryId, { text: '❤️ Yoqtirildi!' });
-        }
-        
-        // Refresh product details by finding the message and updating it
-        const { data: updatedProduct, error: productError } = await supabase
-            .from('products')
-            .select('*')
-            .eq('id', productId)
-            .single();
-
-        if (!productError && updatedProduct) {
-            // Check if user has liked this product for button text
-            const { data: userLike } = await supabase
-                .from('product_likes')
-                .select('*')
-                .eq('product_id', productId)
-                .eq('user_id', chatId.toString())
-                .single();
-
-            const likeButtonText = userLike ? '💔 Like olib tashlash' : '❤️ Yoqtirish';
-            
-            const message = formatProductMessage(updatedProduct);
-            const keyboard = {
-                inline_keyboard: [
-                    [
-                        { text: '🛒 Buyurtma berish', callback_data: `order_${productId}` },
-                        { text: likeButtonText, callback_data: `like_${productId}` }
-                    ],
-                    [{ text: '🔙 Orqaga', callback_data: `category_${updatedProduct.category_id}` }]
-                ]
-            };
-
-            // Get the message ID from the callback query
-            try {
-                await bot.editMessageText(message, {
-                    chat_id: chatId,
-                    message_id: callbackQueryId,
-                    reply_markup: keyboard,
-                    parse_mode: 'Markdown'
-                });
-            } catch (editError) {
-                // If editing fails, it might be because the message is too old
-                console.log('Could not edit message, sending new one');
-            }
-        }
-    } catch (error) {
-        console.error('Error in handleLikeProduct:', error);
-        await bot.answerCallbackQuery(callbackQueryId, { text: '❌ Xatolik yuz berdi.' });
     }
 }
 
@@ -467,6 +760,22 @@ async function processOrderData(chatId, messageText) {
                 return;
             }
             orderData.full_name = messageText.trim();
+            session.state = ORDER_STATES.AWAITING_BIRTH_DATE;
+            await bot.sendMessage(chatId, '📅 Tug\'ilgan sanangizni kiriting (KK.OO.YYYY formatida, masalan: 15.05.1990):');
+            break;
+
+        case ORDER_STATES.AWAITING_BIRTH_DATE:
+            if (!validateBirthDate(messageText.trim())) {
+                await bot.sendMessage(chatId, '❌ Iltimos, tug\'ilgan sanani to\'g\'ri formatda kiriting (KK.OO.YYYY).');
+                return;
+            }
+            orderData.birth_date = messageText.trim();
+            session.state = ORDER_STATES.AWAITING_PROFESSION;
+            await bot.sendMessage(chatId, '👨‍💼 Kasbingizni kiriting (masalan: o\'quvchi, o\'qituvchi, ishchi va h.k.):');
+            break;
+
+        case ORDER_STATES.AWAITING_PROFESSION:
+            orderData.profession = messageText.trim();
             session.state = ORDER_STATES.AWAITING_ADDRESS;
             await bot.sendMessage(chatId, '🏠 To\'liq manzilingizni kiriting:');
             break;
@@ -506,7 +815,14 @@ async function completeOrder(chatId, session) {
     try {
         const { orderData, productId } = session;
         
-        // Get product details for price calculation
+        // Get user
+        const user = await getOrCreateUser(chatId, {});
+        if (!user) {
+            await bot.sendMessage(chatId, '❌ Foydalanuvchi ma\'lumotlarini olishda xatolik.');
+            return;
+        }
+
+        // Get product details
         const { data: product, error: productError } = await supabase
             .from('products')
             .select('price, name')
@@ -520,7 +836,7 @@ async function completeOrder(chatId, session) {
 
         const totalPrice = product.price * orderData.quantity;
 
-        // Save order to database
+        // Save order
         const { error } = await supabase
             .from('orders')
             .insert({
@@ -531,7 +847,8 @@ async function completeOrder(chatId, session) {
                 quantity: orderData.quantity,
                 total_amount: totalPrice,
                 status: 'pending',
-                order_type: 'telegram_bot'
+                order_type: 'immediate',
+                anon_temp_id: user.temp_id
             });
 
         if (error) {
@@ -541,17 +858,16 @@ async function completeOrder(chatId, session) {
         }
 
         // Update product order count
-        const { data: currentProduct, error: getCurrentError } = await supabase
+        const { data: currentProduct } = await supabase
             .from('products')
             .select('order_count')
             .eq('id', productId)
             .single();
 
-        if (!getCurrentError && currentProduct) {
-            const newOrderCount = (currentProduct.order_count || 0) + 1;
+        if (currentProduct) {
             await supabase
                 .from('products')
-                .update({ order_count: newOrderCount })
+                .update({ order_count: (currentProduct.order_count || 0) + 1 })
                 .eq('id', productId);
         }
 
@@ -573,7 +889,6 @@ async function completeOrder(chatId, session) {
             }
         });
 
-        // Clear session
         userSessions.delete(chatId);
     } catch (error) {
         console.error('Error in completeOrder:', error);
@@ -584,7 +899,6 @@ async function completeOrder(chatId, session) {
 // Webhook handler function
 async function handleWebhook(req, res) {
     if (req.method === 'GET') {
-        // Setup webhook on first GET request
         const webhookUrl = `https://${req.headers.host}/api/webhook`;
         
         try {
@@ -613,20 +927,46 @@ async function handleWebhook(req, res) {
     try {
         const update = req.body;
 
-        // Handle callback queries (inline keyboard buttons)
+        // Handle callback queries
         if (update.callback_query) {
             const callbackQuery = update.callback_query;
             const chatId = callbackQuery.message.chat.id;
             const messageId = callbackQuery.message.message_id;
             const data = callbackQuery.data;
 
-            // Answer callback query to remove loading state
-            await bot.answerCallbackQuery(callbackQuery.id);
+            // Safely answer callback query
+            try {
+                await bot.answerCallbackQuery(callbackQuery.id);
+            } catch (callbackError) {
+                // Ignore callback query timeout errors
+                console.log('Callback query timeout, continuing...');
+            }
 
             if (data === 'main_menu') {
                 await handleStart(chatId, messageId);
             } else if (data === 'help') {
-                await handleHelp(chatId, messageId);
+                await bot.editMessageText('❓ *Yordam*\n\nBu bot Global Market do\'koni uchun mo\'ljallangan.\n\n/start - Botni qayta ishga tushirish\n/admin - Admin panel (faqat adminlar uchun)', {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                        ]]
+                    }
+                });
+            } else if (data === 'my_profile') {
+                await showProfile(chatId, messageId);
+            } else if (data === 'my_orders') {
+                await showMyOrders(chatId, messageId);
+            } else if (data === 'contact_admin') {
+                await handleContactAdmin(chatId, messageId);
+            } else if (data === 'admin_panel') {
+                await showAdminPanel(chatId, messageId);
+            } else if (data === 'admin_stats') {
+                await showAdminStats(chatId, messageId);
+            } else if (data === 'admin_broadcast') {
+                await handleBroadcast(chatId, messageId);
             } else if (data === 'buy_products') {
                 await showCategories(chatId, messageId);
             } else if (data.startsWith('category_')) {
@@ -638,9 +978,9 @@ async function handleWebhook(req, res) {
             } else if (data.startsWith('order_')) {
                 const productId = data.split('_')[1];
                 await startOrderProcess(chatId, messageId, productId);
-            } else if (data.startsWith('like_')) {
-                const productId = data.split('_')[1];
-                await handleLikeProduct(chatId, messageId, productId);
+            } else if (data.startsWith('order_detail_')) {
+                const orderId = data.split('_')[2];
+                await showOrderDetail(chatId, messageId, orderId);
             }
         }
 
@@ -649,18 +989,30 @@ async function handleWebhook(req, res) {
             const message = update.message;
             const chatId = message.chat.id;
             const messageText = message.text;
+            const userInfo = message.from;
 
             if (messageText === '/start') {
-                await handleStart(chatId);
-            } else if (messageText === '/help') {
-                await handleHelp(chatId);
-            } else {
-                // Check if user is in order flow
-                const session = userSessions.get(chatId);
-                if (session) {
-                    await processOrderData(chatId, messageText);
+                await handleStart(chatId, null, userInfo);
+            } else if (messageText === '/admin') {
+                if (isAdmin(chatId)) {
+                    await showAdminPanel(chatId, null);
                 } else {
-                    // Default response for unknown commands
+                    await bot.sendMessage(chatId, '❌ Sizda admin huquqlari yo\'q.');
+                }
+            } else {
+                // Check for session states
+                const session = userSessions.get(chatId);
+                const adminSession = adminSessions.get(chatId);
+
+                if (session) {
+                    if (session.state === 'awaiting_contact_message') {
+                        await sendContactToAdmins(chatId, messageText, userInfo);
+                    } else {
+                        await processOrderData(chatId, messageText);
+                    }
+                } else if (adminSession && adminSession.state === ADMIN_STATES.AWAITING_BROADCAST_MESSAGE) {
+                    await sendBroadcastMessage(chatId, messageText);
+                } else {
                     await bot.sendMessage(chatId, 'Iltimos, /start tugmasini bosing yoki menyudan foydalaning.');
                 }
             }
@@ -675,12 +1027,10 @@ async function handleWebhook(req, res) {
 
 // Development server setup
 if (require.main === module) {
-    // Add express for development server
     const express = require('express');
     const app = express();
     app.use(express.json());
     
-    // Routes
     app.get('/api/webhook', handleWebhook);
     app.post('/api/webhook', handleWebhook);
     
@@ -697,7 +1047,6 @@ if (require.main === module) {
         console.log(`Server running on port ${PORT}`);
         console.log(`Webhook endpoint: http://localhost:${PORT}/api/webhook`);
         
-        // Auto-setup webhook for development
         if (process.env.REPLIT_DEPLOYMENT_URL) {
             const webhookUrl = `${process.env.REPLIT_DEPLOYMENT_URL}/api/webhook`;
             bot.setWebHook(webhookUrl).then(() => {
@@ -708,6 +1057,5 @@ if (require.main === module) {
         }
     });
 } else {
-    // Export for Vercel serverless function
     module.exports = handleWebhook;
 }

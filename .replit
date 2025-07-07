@@ -4,7 +4,7 @@ modules = ["nodejs-20", "postgresql-16"]
 channel = "stable-24_05"
 
 [workflows]
-runButton = "Project"
+runButton = "Run Bot Server"
 
 [[workflows.workflow]]
 name = "Project"
@@ -23,6 +23,19 @@ author = "agent"
 task = "shell.exec"
 args = "npm install node-telegram-bot-api @supabase/supabase-js && node api/webhook.js"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Run Bot Server"
+author = 40894461
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm install"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node api/webhook.js"
 
 [[ports]]
 localPort = 5000
