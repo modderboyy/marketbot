@@ -15,7 +15,9 @@ const {
     handleContactAdmin,
     handleBroadcast,
     showAdminOrders,
-    showAdminOrderDetail
+    showAdminOrderDetail,
+    handleSearch,
+    searchProducts
 } = require('./uiHandler');
 const { startOrderProcess, confirmOrder, rejectOrder, deliverOrder } = require('../utils/orderUtils');
 const { safeEditMessage } = require('../utils/helpers');
@@ -50,6 +52,8 @@ async function handleCallback(bot, callbackQuery) {
         await showMyOrders(bot, chatId, messageId);
     } else if (data === 'contact_admin') {
         await handleContactAdmin(bot, chatId, messageId);
+    } else if (data === 'search_products') {
+        await handleSearch(bot, chatId, messageId);
     } 
     // Admin handlers
     else if (data === 'admin_panel') {

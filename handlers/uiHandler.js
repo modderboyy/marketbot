@@ -54,7 +54,10 @@ Quyidagi tugmalardan birini tanlang:`;
                 { text: '👤 Profilim', callback_data: 'my_profile' }
             ],
             [
-                { text: '📞 Murojaat', callback_data: 'contact_admin' },
+                { text: '🔍 Qidiruv', callback_data: 'search_products' },
+                { text: '🌐 Websaytga kirish', url: 'https://globalmarketshop.uz' }
+            ],
+            [
                 { text: '❓ Yordam', callback_data: 'help' }
             ]
         ]
@@ -416,8 +419,7 @@ Admin paneliga xush kelibsiz. Quyidagi amallardan birini tanlang:`;
                     { text: '📢 Xabar tarqatish', callback_data: 'admin_broadcast' }
                 ],
                 [
-                    { text: '📦 Buyurtmalar', callback_data: 'admin_orders' },
-                    { text: '📨 Murojaatlar', callback_data: 'admin_contacts' }
+                    { text: '📦 Buyurtmalar', callback_data: 'admin_orders' }
                 ],
                 [
                     { text: '🔙 Orqaga', callback_data: 'main_menu' }
@@ -483,16 +485,12 @@ async function handleBroadcast(bot, chatId, messageId) {
     });
 }
 
-// Contact admin
+// Contact admin (deprecated - removed from UI)
 async function handleContactAdmin(bot, chatId, messageId) {
-    const { userSessions } = require('../utils/sessionManager');
-    userSessions.set(chatId, { state: 'awaiting_contact_message' });
-
-    await safeEditMessage(bot, chatId, messageId, '📞 *Murojaat*\n\nAdminlarga yubormoqchi bo\'lgan xabaringizni yozing:', {
-        parse_mode: 'Markdown',
+    await safeEditMessage(bot, chatId, messageId, '❌ Bu funksiya vaqtincha ishlamaydi.', {
         reply_markup: {
             inline_keyboard: [[
-                { text: '❌ Bekor qilish', callback_data: 'main_menu' }
+                { text: '🔙 Orqaga', callback_data: 'main_menu' }
             ]]
         }
     });
@@ -607,6 +605,71 @@ async function showAdminOrderDetail(bot, chatId, messageId, orderId) {
     }
 }
 
+// Search products function
+async function handleSearch(bot, chatId, messageId) {
+    await safeEditMessage(bot, chatId, messageId, '🔍 *Qidiruv*\n\nMahsulot nomini yozing yoki inline qidiruv uchun @globalmarketshopbot ni ishlating:', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '🔍 Inline qidiruv', switch_inline_query_current_chat: '@globalmarketshopbot ' }
+                ],
+                [
+                    { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                ]
+            ]
+        }
+    });
+}
+
+// Search products by name
+async function searchProducts(bot, chatId, messageId, searchQuery) {
+    try {
+        const { data: products, error } = await supabase
+            .from('products')
+            .select('*')
+            .eq('is_active', true)
+            .ilike('name', `%${searchQuery}%`)
+            .order('name')
+            .limit(10);
+
+        if (error) {
+            console.error('Error searching products:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Qidirishda xatolik yuz berdi.');
+            return;
+        }
+
+        if (!products || products.length === 0) {
+            await safeEditMessage(bot, chatId, messageId, '📭 Qidiruv natijasida hech narsa topilmadi.', {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                    ]]
+                }
+            });
+            return;
+        }
+
+        const message = `🔍 *Qidiruv natijalari: "${searchQuery}"*\n\nTopilgan mahsulotlar:`;
+        
+        const keyboard = {
+            inline_keyboard: [
+                ...products.map(product => [
+                    { text: `${product.name} - ${product.price} so'm`, callback_data: `product_${product.id}` }
+                ]),
+                [{ text: '🔙 Orqaga', callback_data: 'main_menu' }]
+            ]
+        };
+
+        await safeEditMessage(bot, chatId, messageId, message, {
+            reply_markup: keyboard,
+            parse_mode: 'Markdown'
+        });
+    } catch (error) {
+        console.error('Error in searchProducts:', error);
+    }
+}
+
 function formatProductMessage(product, seller = null) {
     const deliveryText = product.has_delivery ? 
         `🚚 Yetkazib berish: ${product.delivery_price > 0 ? `${product.delivery_price} so'm` : 'Bepul'}` : 
@@ -657,5 +720,7 @@ module.exports = {
     handleBroadcast,
     handleContactAdmin,
     showAdminOrders,
-    showAdminOrderDetail
+    showAdminOrderDetail,
+    handleSearch,
+    searchProducts
 };

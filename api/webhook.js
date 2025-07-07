@@ -58,6 +58,61 @@ async function handleDeliveryAddress(chatId, messageText) {
     }
 }
 
+// Handle inline queries for search
+async function handleInlineQuery(bot, inlineQuery) {
+    const { supabase } = require('../utils/database');
+    const query = inlineQuery.query.trim();
+    
+    if (!query) {
+        await bot.answerInlineQuery(inlineQuery.id, [], {
+            switch_pm_text: "🔍 Qidiruv uchun mahsulot nomini yozing",
+            switch_pm_parameter: "search"
+        });
+        return;
+    }
+
+    try {
+        const { data: products, error } = await supabase
+            .from('products')
+            .select('*')
+            .eq('is_active', true)
+            .ilike('name', `%${query}%`)
+            .order('name')
+            .limit(20);
+
+        if (error) {
+            console.error('Error searching products:', error);
+            await bot.answerInlineQuery(inlineQuery.id, []);
+            return;
+        }
+
+        const results = products.map(product => ({
+            type: 'article',
+            id: product.id,
+            title: product.name,
+            description: `💰 ${product.price} so'm - ${product.description?.substring(0, 100)}...`,
+            input_message_content: {
+                message_text: `📦 *${product.name}*\n\n💰 Narx: ${product.price} so'm\n📝 Ta'rif: ${product.description}\n\n🛒 Buyurtma berish uchun @globalmarketshopbot ga o'ting`,
+                parse_mode: 'Markdown'
+            },
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🛒 Buyurtma berish', url: `https://t.me/globalmarketshopbot?start=product_${product.id}` }
+                ]]
+            }
+        }));
+
+        await bot.answerInlineQuery(inlineQuery.id, results, {
+            cache_time: 300,
+            switch_pm_text: "🏪 Do'konga o'tish",
+            switch_pm_parameter: "shop"
+        });
+    } catch (error) {
+        console.error('Error in handleInlineQuery:', error);
+        await bot.answerInlineQuery(inlineQuery.id, []);
+    }
+}
+
 // Webhook handler function
 async function handleWebhook(req, res) {
     if (req.method === 'GET') {
@@ -88,6 +143,11 @@ async function handleWebhook(req, res) {
 
     try {
         const update = req.body;
+
+        // Handle inline queries
+        if (update.inline_query) {
+            await handleInlineQuery(bot, update.inline_query);
+        }
 
         // Handle callback queries
         if (update.callback_query) {

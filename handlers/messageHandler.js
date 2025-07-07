@@ -42,6 +42,10 @@ async function handleMessage(bot, message) {
                 await sendContactToAdmins(bot, chatId, messageText, userInfo);
             } else if (session.state === 'awaiting_reply_message') {
                 await sendReplyToUser(bot, chatId, messageText, session.replyToUserId);
+            } else if (session.state === 'awaiting_search_query') {
+                const { searchProducts } = require('./uiHandler');
+                await searchProducts(bot, chatId, null, messageText);
+                userSessions.delete(chatId);
             } else {
                 await processOrderData(bot, chatId, messageText);
             }

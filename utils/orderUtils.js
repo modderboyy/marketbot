@@ -373,6 +373,51 @@ async function sendBroadcastMessage(bot, chatId, message) {
     }
 }
 
+// Send order notification to admins
+async function sendToAdmins(bot, orderData) {
+    const { ADMIN_IDS } = require('./constants');
+
+    const message = `🛒 *Yangi buyurtma*
+
+📦 Mahsulot: ${orderData.productName}
+👤 Mijoz: ${orderData.full_name}
+📞 Telefon: ${orderData.phone}
+🏠 Manzil: ${orderData.address}
+📅 Tug'ilgan sana: ${orderData.birth_date}
+👨‍💼 Kasb: ${orderData.profession}
+🔢 Miqdor: ${orderData.quantity}
+💰 Jami: ${orderData.total_amount} so'm
+🆔 Buyurtma ID: ${orderData.orderId}`;
+
+    const keyboard = {
+        inline_keyboard: [[
+            { text: '✅ Rozi bo\'lish', callback_data: `confirm_order_${orderData.orderId}` },
+            { text: '❌ Rad etish', callback_data: `reject_order_${orderData.orderId}` }
+        ]]
+    };
+
+    let successCount = 0;
+    for (const adminId of ADMIN_IDS) {
+        try {
+            await bot.sendMessage(adminId, message, {
+                parse_mode: 'Markdown',
+                reply_markup: keyboard
+            });
+            successCount++;
+        } catch (error) {
+            if (error.message.includes('chat not found')) {
+                console.log(`Admin ${adminId} has not started the bot yet`);
+            } else {
+                console.error(`Error sending to admin ${adminId}:`, error.message);
+            }
+        }
+    }
+
+    if (successCount === 0) {
+        console.log('No admins received the order notification');
+    }
+}
+
 module.exports = {
     startOrderProcess,
     processOrderData,
