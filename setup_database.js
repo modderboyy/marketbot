@@ -1,3 +1,4 @@
+
 const { createClient } = require('@supabase/supabase-js');
 
 // Environment variables
@@ -11,22 +12,31 @@ async function setupDatabase() {
     try {
         console.log('Setting up database...');
 
-        // Add new columns to orders table
-        const alterQueries = [
-            `ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_agree BOOLEAN DEFAULT FALSE;`,
-            `ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_client_went BOOLEAN DEFAULT FALSE;`,
-            `ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_client_claimed BOOLEAN DEFAULT FALSE;`
+        console.log('\nSupabase Dashboard SQL buyruqlari:');
+        console.log('======================================');
+        
+        const sqlCommands = [
+            `-- Add new columns to orders table
+ALTER TABLE orders 
+ADD COLUMN IF NOT EXISTS is_agree BOOLEAN DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS is_client_went BOOLEAN DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS is_client_claimed BOOLEAN DEFAULT FALSE;`,
+
+            `-- Update existing delivery_status column to boolean if needed
+UPDATE orders SET delivery_status = false WHERE delivery_status IS NULL;`,
+
+            `-- Create index for better performance
+CREATE INDEX IF NOT EXISTS idx_orders_is_agree ON orders(is_agree);
+CREATE INDEX IF NOT EXISTS idx_orders_is_client_went ON orders(is_client_went);
+CREATE INDEX IF NOT EXISTS idx_orders_is_client_claimed ON orders(is_client_claimed);`
         ];
 
-        for (const query of alterQueries) {
-            const { data, error } = await supabase.rpc('exec_sql', { sql_query: query });
-            if (error) {
-                console.error('Error executing query:', query, error);
-            } else {
-                console.log('Successfully executed:', query);
-            }
-        }
+        sqlCommands.forEach((sql, index) => {
+            console.log(`\n${index + 1}. ${sql}`);
+        });
 
+        console.log('\n======================================');
+        console.log('Bu SQL buyruqlarini Supabase Dashboard > SQL Editor da ishga tushiring.');
         console.log('Database setup completed!');
     } catch (error) {
         console.error('Error setting up database:', error);

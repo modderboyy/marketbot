@@ -91,6 +91,18 @@ async function handleCallback(bot, callbackQuery) {
     } else if (data.startsWith('reject_order_')) {
         const orderId = data.replace('reject_order_', '');
         await rejectOrder(bot, chatId, messageId, orderId);
+    } else if (data.startsWith('agree_order_')) {
+        const orderId = data.replace('agree_order_', '');
+        await agreeOrder(bot, chatId, messageId, orderId);
+    } else if (data.startsWith('disagree_order_')) {
+        const orderId = data.replace('disagree_order_', '');
+        await disagreeOrder(bot, chatId, messageId, orderId);
+    } else if (data.startsWith('client_went_')) {
+        const orderId = data.replace('client_went_', '');
+        await clientWent(bot, chatId, messageId, orderId);
+    } else if (data.startsWith('client_not_went_')) {
+        const orderId = data.replace('client_not_went_', '');
+        await clientNotWent(bot, chatId, messageId, orderId);
     } else if (data.startsWith('deliver_order_')) {
         const orderId = data.replace('deliver_order_', '');
         await deliverOrder(bot, chatId, messageId, orderId);
@@ -434,6 +446,243 @@ async function handleCustomerOrders(bot, chatId, messageId) {
             await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmalarni yuklashda xatolik yuz berdi.');
             return;
         }
+
+
+
+// Admin rozi bo'lish
+async function agreeOrder(bot, chatId, messageId, orderId) {
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
+
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                is_agree: true,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            console.error('Error updating order agreement:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani tasdiqlashda xatolik.');
+            return;
+        }
+
+        // Get order and customer info
+        const { data: order, error: fetchError } = await supabase
+            .from('orders')
+            .select(`
+                *,
+                products(name),
+                users!inner(telegram_id, full_name)
+            `)
+            .eq('id', orderId)
+            .single();
+
+        if (fetchError || !order) {
+            console.error('Error fetching order:', fetchError);
+            return;
+        }
+
+        // Notify customer
+        await bot.sendMessage(order.users.telegram_id, 
+            `✅ *Buyurtmangiz tasdiqlandi!*\n\n📦 Mahsulot: ${order.products.name}\n💰 Narx: ${order.total_price} so'm\n\nIltimos, ko'rsatilgan manzilga keling.`, 
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '✅ Bordim', callback_data: `client_went_${orderId}` },
+                        { text: '❌ Bormadim', callback_data: `client_not_went_${orderId}` }
+                    ]]
+                }
+            }
+        );
+
+        await safeEditMessage(bot, chatId, messageId, '✅ Buyurtma tasdiqlandi va mijozga xabar yuborildi.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                ]]
+            }
+        });
+    } catch (error) {
+        console.error('Error in agreeOrder:', error);
+    }
+}
+
+// Admin rad etish
+async function disagreeOrder(bot, chatId, messageId, orderId) {
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
+
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                is_agree: false,
+                status: 'cancelled',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            console.error('Error updating order disagreement:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani rad etishda xatolik.');
+            return;
+        }
+
+        // Get order and customer info
+        const { data: order, error: fetchError } = await supabase
+            .from('orders')
+            .select(`
+                *,
+                products(name),
+                users!inner(telegram_id, full_name)
+            `)
+            .eq('id', orderId)
+            .single();
+
+        if (fetchError || !order) {
+            console.error('Error fetching order:', fetchError);
+            return;
+        }
+
+        // Notify customer
+        await bot.sendMessage(order.users.telegram_id, 
+            `❌ *Buyurtmangiz rad etildi*\n\n📦 Mahsulot: ${order.products.name}\n\nKechirasiz, bu buyurtmani bajarib bo'lmaydi.`, 
+            { parse_mode: 'Markdown' }
+        );
+
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma rad etildi va mijozga xabar yuborildi.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                ]]
+            }
+        });
+    } catch (error) {
+        console.error('Error in disagreeOrder:', error);
+    }
+}
+
+// Mijoz keldi
+async function clientWent(bot, chatId, messageId, orderId) {
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
+    const { ADMIN_IDS } = require('../utils/constants');
+
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                is_client_went: true,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            console.error('Error updating client went status:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Holatni yangilashda xatolik.');
+            return;
+        }
+
+        // Get order info
+        const { data: order, error: fetchError } = await supabase
+            .from('orders')
+            .select(`
+                *,
+                products(name),
+                users!inner(full_name, phone)
+            `)
+            .eq('id', orderId)
+            .single();
+
+        if (fetchError || !order) {
+            console.error('Error fetching order:', fetchError);
+            return;
+        }
+
+        // Notify admins
+        const adminMessage = `👤 *Mijoz keldi!*\n\n📦 Mahsulot: ${order.products.name}\n👤 Mijoz: ${order.users.full_name}\n📞 Telefon: ${order.users.phone}\n💰 Narx: ${order.total_price} so'm`;
+
+        for (const adminId of ADMIN_IDS) {
+            try {
+                await bot.sendMessage(adminId, adminMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '✅ Ha, berildi', callback_data: `product_delivered_${orderId}` },
+                            { text: '❌ Yo\'q, berilmadi', callback_data: `product_not_delivered_${orderId}` }
+                        ]]
+                    }
+                });
+            } catch (error) {
+                console.error(`Error sending to admin ${adminId}:`, error);
+            }
+        }
+
+        await safeEditMessage(bot, chatId, messageId, '✅ Adminlarga xabar yuborildi. Mahsulot berilishini kuting.');
+    } catch (error) {
+        console.error('Error in clientWent:', error);
+    }
+}
+
+// Mijoz kelmadi
+async function clientNotWent(bot, chatId, messageId, orderId) {
+    const { supabase } = require('../utils/database');
+    const { safeEditMessage } = require('../utils/helpers');
+    const { ADMIN_IDS } = require('../utils/constants');
+
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                is_client_went: false,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            console.error('Error updating client not went status:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Holatni yangilashda xatolik.');
+            return;
+        }
+
+        // Get order info
+        const { data: order, error: fetchError } = await supabase
+            .from('orders')
+            .select(`
+                *,
+                products(name),
+                users!inner(full_name, phone)
+            `)
+            .eq('id', orderId)
+            .single();
+
+        if (fetchError || !order) {
+            console.error('Error fetching order:', fetchError);
+            return;
+        }
+
+        // Notify admins
+        const adminMessage = `❌ *Mijoz kelmadi*\n\n📦 Mahsulot: ${order.products.name}\n👤 Mijoz: ${order.users.full_name}\n📞 Telefon: ${order.users.phone}\n💰 Narx: ${order.total_price} so'm`;
+
+        for (const adminId of ADMIN_IDS) {
+            try {
+                await bot.sendMessage(adminId, adminMessage, {
+                    parse_mode: 'Markdown'
+                });
+            } catch (error) {
+                console.error(`Error sending to admin ${adminId}:`, error);
+            }
+        }
+
+        await safeEditMessage(bot, chatId, messageId, '📢 Adminlarga mijoz kelmaganligi haqida xabar yuborildi.');
+    } catch (error) {
+        console.error('Error in clientNotWent:', error);
+    }
+}
 
         if (!orders || orders.length === 0) {
             await safeEditMessage(bot, chatId, messageId, '📋 Sizda hech qanday buyurtma yo\'q.', {
