@@ -124,3 +124,5 @@ The bot is configured for both development (Express server on port 5000) and pro
 - July 07, 2025: Initial setup
 - July 08, 2025: Fixed admin order status handling, integrated with existing Supabase schema, bot fully functional
 - July 08, 2025: Fixed critical UUID parsing error - reordered callback handlers so product_delivered_ and product_not_delivered_ are processed before generic product_ callbacks
+- July 08, 2025: Added comprehensive help guide with detailed step-by-step instructions for all bot features
+- July 08, 2025: Created comprehensive security guidelines document (SECURITY.md) with best practices, threat prevention, and monitoring guidelines
