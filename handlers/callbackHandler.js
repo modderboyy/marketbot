@@ -125,9 +125,11 @@ async function handleCallback(bot, callbackQuery) {
         await handleCustomerNotArrived(bot, chatId, messageId, orderId);
     } else if (data.startsWith("product_delivered_")) {
         const orderId = data.replace("product_delivered_", "");
+        console.log("Product delivered callback - orderId:", orderId);
         await handleProductDelivered(bot, chatId, messageId, orderId);
     } else if (data.startsWith("product_not_delivered_")) {
         const orderId = data.replace("product_not_delivered_", "");
+        console.log("Product not delivered callback - orderId:", orderId);
         await handleProductNotDelivered(bot, chatId, messageId, orderId);
     } else if (data.startsWith("reply_")) {
         const userChatId = data.split("_")[1];
@@ -338,6 +340,21 @@ async function handleProductDelivered(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require("../utils/helpers");
 
     try {
+        console.log("handleProductDelivered called with orderId:", orderId);
+        
+        // Validate orderId format (UUID)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(orderId)) {
+            console.error("Invalid UUID format for orderId:", orderId);
+            await safeEditMessage(
+                bot,
+                chatId,
+                messageId,
+                "❌ Buyurtma ID formatida xatolik.",
+            );
+            return;
+        }
+
         const { error } = await supabase
             .from("orders")
             .update({
@@ -414,11 +431,25 @@ async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require("../utils/helpers");
 
     try {
+        console.log("handleProductNotDelivered called with orderId:", orderId);
+        
+        // Validate orderId format (UUID)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(orderId)) {
+            console.error("Invalid UUID format for orderId:", orderId);
+            await safeEditMessage(
+                bot,
+                chatId,
+                messageId,
+                "❌ Buyurtma ID formatida xatolik.",
+            );
+            return;
+        }
+
         const { error } = await supabase
             .from("orders")
             .update({
                 status: "cancelled",
-                delivery_status: false,
                 is_client_claimed: false,
                 updated_at: new Date().toISOString(),
             })
