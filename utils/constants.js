@@ -4,7 +4,7 @@ const SUPABASE_URL = "https://tdfphvmmwfqhnzfggpln.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZnBodm1td2ZxaG56ZmdncGxuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3MzcwNjYsImV4cCI6MjA2NzMxMzA2Nn0.0H8_6f07k0vmjOVnqqXgqBYwIEu50Qqs_tExPv1k7DQ";
 
 // Admin IDs - Replace with real admin Telegram IDs
-const ADMIN_IDS = [6295092422]; // Real admin Telegram IDs
+const ADMIN_IDS = [6295092422, 7715535429]; // Real admin Telegram IDs
 
 const ORDER_STATES = {
     AWAITING_NAME: "awaiting_name",
