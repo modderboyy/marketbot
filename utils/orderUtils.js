@@ -282,16 +282,61 @@ async function completeOrder(bot, chatId, session) {
 async function confirmOrder(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require('./helpers');
 
-    await safeEditMessage(bot, chatId, messageId, '🏠 *Buyurtmani tasdiqlash*\n\nYetkazish manzilini tanlang:', {
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '🏢 Asosiy markaz', callback_data: `confirm_main_center_${orderId}` }],
-                [{ text: '✍️ Qo\'lda yozish', callback_data: `confirm_manual_address_${orderId}` }],
-                [{ text: '❌ Bekor qilish', callback_data: 'admin_panel' }]
-            ]
+    try {
+        // Update order status and is_agree
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                is_agree: true,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            console.error('Error updating order agreement:', error);
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani tasdiqlashda xatolik.');
+            return;
         }
-    });
+
+        // Get order details to notify customer
+        const { data: order, error: fetchError } = await supabase
+            .from('orders')
+            .select(`
+                user_id,
+                products(name),
+                users!inner(telegram_id)
+            `)
+            .eq('id', orderId)
+            .single();
+
+        if (fetchError) {
+            console.error('Error fetching order for notification:', fetchError);
+        } else if (order && order.users) {
+            const mainCenterAddress = "Qashqadaryo viloyati, G'uzor tumani, Fazo yonida";
+            
+            await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma qabul qilindi*\n\n📦 Mahsulot: ${order.products?.name}\n🏠 Olish manzili: ${mainCenterAddress}\n\nMahsulotni olish uchun yuqoridagi manzilga keling.\n\n*Faqatgina borib kelganingizdan so'ng pastdagi tugmani bosing!*`, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '✅ Bordim', callback_data: `customer_arrived_${orderId}` },
+                        { text: '❌ Bormadim', callback_data: `customer_not_arrived_${orderId}` }
+                    ]]
+                }
+            });
+        }
+
+        await safeEditMessage(bot, chatId, messageId, '✅ Buyurtma qabul qilindi. Mijozga xabar yuborildi.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                ]]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in confirmOrder:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani tasdiqlashda xatolik yuz berdi.');
+    }
 }
 
 // Reject order
@@ -301,7 +346,11 @@ async function rejectOrder(bot, chatId, messageId, orderId) {
     try {
         const { error } = await supabase
             .from('orders')
-            .update({ status: 'cancelled' })
+            .update({ 
+                status: 'cancelled',
+                is_agree: false,
+                updated_at: new Date().toISOString()
+            })
             .eq('id', orderId);
 
         if (error) {
@@ -322,7 +371,13 @@ async function rejectOrder(bot, chatId, messageId, orderId) {
             });
         }
 
-        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma rad etildi. Mijozga xabar yuborildi.');
+        await safeEditMessage(bot, chatId, messageId, '❌ Buyurtma rad etildi. Mijozga xabar yuborildi.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                ]]
+            }
+        });
     } catch (error) {
         console.error('Error in rejectOrder:', error);
     }

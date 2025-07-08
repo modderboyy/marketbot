@@ -164,6 +164,21 @@ async function handleCustomerArrived(bot, chatId, messageId, orderId) {
         const { supabase } = require('../utils/database');
         const { ADMIN_IDS } = require('../utils/constants');
 
+        // Update is_client_went to true
+        const { error: updateError } = await supabase
+            .from('orders')
+            .update({ 
+                is_client_went: true,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (updateError) {
+            console.error('Error updating client went status:', updateError);
+            await safeEditMessage(bot, chatId, messageId, '❌ Xatolik yuz berdi.');
+            return;
+        }
+
         const { data: order, error } = await supabase
             .from('orders')
             .select('*, products(name)')
@@ -200,13 +215,32 @@ async function handleCustomerArrived(bot, chatId, messageId, orderId) {
 }
 
 async function handleCustomerNotArrived(bot, chatId, messageId, orderId) {
-    await safeEditMessage(bot, chatId, messageId, '❌ Iltimos, avval kelgan bo\'lganingizdan so\'ng bosing.', {
-        reply_markup: {
-            inline_keyboard: [[
-                { text: '🔙 Orqaga', callback_data: 'my_orders' }
-            ]]
+    try {
+        const { supabase } = require('../utils/database');
+
+        // Update is_client_went to false
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                is_client_went: false,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+
+        if (error) {
+            console.error('Error updating client went status:', error);
         }
-    });
+
+        await safeEditMessage(bot, chatId, messageId, '❌ Iltimos, avval kelgan bo\'lganingizdan so\'ng bosing.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Orqaga', callback_data: 'my_orders' }
+                ]]
+            }
+        });
+    } catch (error) {
+        console.error('Error in handleCustomerNotArrived:', error);
+    }
 }
 
 async function handleProductDelivered(bot, chatId, messageId, orderId) {
@@ -219,6 +253,7 @@ async function handleProductDelivered(bot, chatId, messageId, orderId) {
             .update({ 
                 status: 'completed',
                 delivery_status: true,
+                is_client_claimed: true,
                 updated_at: new Date().toISOString()
             })
             .eq('id', orderId);
@@ -248,7 +283,13 @@ async function handleProductDelivered(bot, chatId, messageId, orderId) {
             });
         }
 
-        await safeEditMessage(bot, chatId, messageId, '✅ Buyurtma muvaffaqiyatli yakunlandi. Mijozga xabar yuborildi.');
+        await safeEditMessage(bot, chatId, messageId, '✅ Buyurtma muvaffaqiyatli yakunlandi. Mijozga xabar yuborildi.', {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🔙 Admin Panel', callback_data: 'admin_panel' }
+                ]]
+            }
+        });
     } catch (error) {
         console.error('Error in handleProductDelivered:', error);
         await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmani yakunlashda xatolik yuz berdi.');
@@ -263,8 +304,9 @@ async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
         const { error } = await supabase
             .from('orders')
             .update({ 
-                status: 'stopped',
+                status: 'cancelled',
                 delivery_status: false,
+                is_client_claimed: false,
                 updated_at: new Date().toISOString()
             })
             .eq('id', orderId);
@@ -275,7 +317,7 @@ async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
             return;
         }
 
-        await safeEditMessage(bot, chatId, messageId, '❌ Mahsulot berilmadi deb belgilandi. Buyurtma to\'xtatildi.', {
+        await safeEditMessage(bot, chatId, messageId, '❌ Mahsulot berilmadi deb belgilandi. Buyurtma bekor qilindi.', {
             reply_markup: {
                 inline_keyboard: [[
                     { text: '🔙 Admin Panel', callback_data: 'admin_panel' }

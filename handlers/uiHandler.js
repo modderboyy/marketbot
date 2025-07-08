@@ -206,11 +206,11 @@ async function showOrderDetail(bot, chatId, messageId, orderId) {
             return;
         }
 
-        const statusText = order.status === 'completed' ? '✅ Yetkazildi' : 
+        const statusText = order.status === 'completed' ? '✅ Yakunlandi' : 
                           order.status === 'cancelled' ? '❌ Bekor qilindi' : 
                           order.status === 'confirmed' ? '✅ Tasdiqlandi' : 
-                          order.status === 'stopped' ? '🛑 To\'xtatildi' :
-                          '⏳ Kutilmoqda';
+                          order.status === 'pending' ? '⏳ Kutilmoqda' :
+                          '❓ Noma\'lum';
 
         const orderMessage = `📦 *Buyurtma Tafsilotlari*
 
@@ -581,11 +581,11 @@ async function showAdminOrderDetail(bot, chatId, messageId, orderId) {
             return;
         }
 
-        const statusText = order.status === 'completed' ? '✅ Yetkazildi' : 
+        const statusText = order.status === 'completed' ? '✅ Yakunlandi' : 
                           order.status === 'cancelled' ? '❌ Bekor qilindi' : 
                           order.status === 'confirmed' ? '✅ Tasdiqlandi' : 
-                          order.status === 'stopped' ? '🛑 To\'xtatildi' :
-                          '⏳ Kutilmoqda';
+                          order.status === 'pending' ? '⏳ Kutilmoqda' :
+                          '❓ Noma\'lum';
 
         const orderMessage = `📦 *Buyurtma Tafsilotlari (Admin)*
 
