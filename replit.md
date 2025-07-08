@@ -97,7 +97,29 @@ Category Selection → Product Retrieval → Format Product Info → Display wit
 
 Preferred communication style: Simple, everyday language.
 
+## Current Status
+
+✅ Bot is fully functional with:
+- Categories and products display from Supabase
+- Complete order flow with user data collection
+- Admin panel for order management 
+- Order status updates (delivered/cancelled)
+- Proper database integration with existing schema
+
+## Admin Functions Fixed
+
+✅ "Ha, berildi" button: Sets `status = 'completed'` and `is_client_claimed = true`
+✅ "Yo'q, berilmadi" button: Sets `status = 'cancelled'` and `is_client_claimed = false`
+
+## Deployment Ready
+
+The bot is configured for both development (Express server on port 5000) and production (Vercel serverless functions). To deploy:
+
+1. Set BOT_TOKEN in Vercel environment variables
+2. Set DATABASE_URL in Vercel environment variables  
+3. Deploy to Vercel - webhook will auto-configure
+
 ## Changelog
 
-Changelog:
-- July 07, 2025. Initial setup
+- July 07, 2025: Initial setup
+- July 08, 2025: Fixed admin order status handling, integrated with existing Supabase schema, bot fully functional
