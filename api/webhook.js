@@ -8,65 +8,7 @@ const { isAdmin } = require('../utils/helpers');
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN);
 
-// Handle delivery address input
-async function handleDeliveryAddress(bot, chatId, messageText, session) {
-    const { supabase } = require('../utils/database');
 
-    try {
-        // Extract address components from the message text
-        const addressParts = messageText.split(',').map(part => part.trim());
-        if (addressParts.length < 4) {
-            await bot.sendMessage(chatId, '❌ Manzil noto\'g\'ri formatda. Iltimos, quyidagi formatda kiriting: Qashqadaryo viloyati, Guzor tumani, {mahalla}, {ko\'cha}, {uy raqami}');
-            return;
-        }
-
-        const mahalla = addressParts[2];
-        const kucha = addressParts[3];
-        const uyRaqami = addressParts[4];
-
-        const fullAddress = `Qashqadaryo viloyati, Guzor tumani, ${mahalla}, ${kucha}, ${uyRaqami}`;
-
-        const { error } = await supabase
-            .from('orders')
-            .update({
-                status: 'confirmed',
-                delivery_address: fullAddress,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', session.orderId);
-
-        if (error) {
-            console.error("Error updating order:", error);
-            await bot.sendMessage(chatId, '❌ Buyurtmani tasdiqlashda xatolik.');
-            return;
-        }
-
-        // Get order details to notify customer
-        const { data: order } = await supabase
-            .from('orders')
-            .select('user_id, products(name), users!inner(telegram_id)')
-            .eq('id', session.orderId)
-            .single();
-
-        if (order && order.users) {
-            await bot.sendMessage(order.users.telegram_id, `✅ *Buyurtma tasdiqlandi*\n\n📦 Mahsulot: ${order.products?.name}\n🏠 Olish manzili: ${fullAddress}\n\nMahsulotni olish uchun yuqoridagi manzilga keling.\n\n*Faqatgina borib kelganingizdan so'ng pastdagi tugmani bosing!*`, {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [[
-                        { text: '✅ Bordim', callback_data: `customer_arrived_${session.orderId}` },
-                        { text: '❌ Bormadim', callback_data: `customer_not_arrived_${session.orderId}` }
-                    ]]
-                }
-            });
-        }
-
-        await bot.sendMessage(chatId, '✅ Buyurtma tasdiqlandi. Mijozga manzil yuborildi.');
-        adminSessions.delete(chatId);
-    } catch (error) {
-        console.error('Error in handleDeliveryAddress:', error);
-        await bot.sendMessage(chatId, '❌ Buyurtmani tasdiqlashda xatolik yuz berdi.');
-    }
-}
 
 // Handle inline queries for search
 async function handleInlineQuery(bot, inlineQuery) {

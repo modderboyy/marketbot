@@ -79,6 +79,9 @@ async function handleCallback(bot, callbackQuery) {
         await handleBroadcast(bot, chatId, messageId);
     } else if (data === "admin_orders") {
         await showAdminOrders(bot, chatId, messageId);
+    } else if (data.startsWith("admin_orders_page_")) {
+        const page = parseInt(data.replace("admin_orders_page_", ""));
+        await showAdminOrders(bot, chatId, messageId, page);
     } else if (data.startsWith("admin_order_")) {
         const orderId = data.split("_")[2];
         await showAdminOrderDetail(bot, chatId, messageId, orderId);
@@ -91,11 +94,9 @@ async function handleCallback(bot, callbackQuery) {
         await showProducts(bot, chatId, messageId, categoryId);
     } else if (data.startsWith("product_delivered_")) {
         const orderId = data.replace("product_delivered_", "");
-        console.log(`Handling product_delivered for orderId: ${orderId}`);
         await handleProductDelivered(bot, chatId, messageId, orderId);
     } else if (data.startsWith("product_not_delivered_")) {
         const orderId = data.replace("product_not_delivered_", "");
-        console.log(`Handling product_not_delivered for orderId: ${orderId}`);
         await handleProductNotDelivered(bot, chatId, messageId, orderId);
     } else if (data.startsWith("product_")) {
         const productId = data.split("_")[1];
@@ -132,10 +133,13 @@ async function handleCallback(bot, callbackQuery) {
         await handleCustomerNotArrived(bot, chatId, messageId, orderId);
 
     } else if (data.startsWith("reply_")) {
-        const userChatId = data.split("_")[1];
+        const parts = data.split("_");
+        const userChatId = parts[1];
+        const contactMessageId = parts[2] || null;
         adminSessions.set(chatId, {
             state: "awaiting_reply_message",
             replyToUserId: userChatId,
+            contactMessageId: contactMessageId,
         });
         await safeEditMessage(
             bot,
@@ -339,7 +343,7 @@ async function handleCustomerNotArrived(bot, chatId, messageId, orderId) {
             },
         );
     } catch (error) {
-        console.error("Error in handleCustomerNotArrived:", error);
+
     }
 }
 
@@ -348,7 +352,7 @@ async function handleProductDelivered(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require("../utils/helpers");
 
     try {
-        console.log(`Attempting to update order ${orderId} to completed.`);
+
         const { error } = await supabase
             .from("orders")
             .update({
@@ -426,39 +430,23 @@ async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
     const { safeEditMessage } = require("../utils/helpers");
 
     try {
-        console.log(`Attempting to update order ${orderId} to cancelled.`);
+
         const { error } = await supabase
             .from("orders")
             .update({
                 status: "cancelled",
-                delivery_status: false,
                 is_client_claimed: false,
                 updated_at: new Date().toISOString(),
             })
             .eq("id", orderId);
 
         if (error) {
-            console.error(
-                "Error updating order status in handleProductNotDelivered:",
-                error,
+            await safeEditMessage(
+                bot,
+                chatId,
+                messageId,
+                "❌ Buyurtma holatini yangilashda xatolik.",
             );
-            let errorMessage = "❌ Buyurtma holatini yangilashda xatolik.";
-            if (
-                error.message.includes("column id does not exist") ||
-                error.message.includes(
-                    "invalid input syntax for type uuid: null",
-                )
-            ) {
-                errorMessage =
-                    "❌ Buyurtma topilmadi yoki ID noto'g'ri formatda.";
-            } else if (
-                error.message.includes("invalid input syntax for type uuid")
-            ) {
-                errorMessage = `❌ Buyurtmani yangilashda xatolik (status turi bilan bog'liq bo'lishi mumkin): ${error.message}`;
-            } else {
-                errorMessage = `❌ Buyurtma holatini yangilashda xatolik: ${error.message}`;
-            }
-            await safeEditMessage(bot, chatId, messageId, errorMessage);
             return;
         }
 
@@ -481,7 +469,7 @@ async function handleProductNotDelivered(bot, chatId, messageId, orderId) {
             },
         );
     } catch (error) {
-        console.error("Unexpected error in handleProductNotDelivered:", error);
+
         await safeEditMessage(
             bot,
             chatId,
@@ -498,38 +486,23 @@ async function handleMainCenterConfirmation(bot, chatId, messageId, orderId) {
         const mainCenterAddress =
             "Qashqadaryo viloyati, G'uzor tumani, Fazo yonida";
 
-        console.log(`Attempting to confirm order ${orderId} to main center.`);
+
         const { error } = await supabase
             .from("orders")
             .update({
-                status: "confirmed",
+                status: "completed",
                 delivery_address: mainCenterAddress,
                 updated_at: new Date().toISOString(),
             })
             .eq("id", orderId);
 
         if (error) {
-            console.error(
-                "Error confirming order in handleMainCenterConfirmation:",
-                error,
+            await safeEditMessage(
+                bot,
+                chatId,
+                messageId,
+                "❌ Buyurtmani tasdiqlashda xatolik.",
             );
-            let errorMessage = "❌ Buyurtmani tasdiqlashda xatolik.";
-            if (
-                error.message.includes("column id does not exist") ||
-                error.message.includes(
-                    "invalid input syntax for type uuid: null",
-                )
-            ) {
-                errorMessage =
-                    "❌ Buyurtma topilmadi yoki ID noto'g'ri formatda.";
-            } else if (
-                error.message.includes("invalid input syntax for type uuid")
-            ) {
-                errorMessage = `❌ Buyurtmani tasdiqlashda xatolik (status turi bilan bog'liq bo'lishi mumkin): ${error.message}`;
-            } else {
-                errorMessage = `❌ Buyurtmani tasdiqlashda xatolik: ${error.message}`;
-            }
-            await safeEditMessage(bot, chatId, messageId, errorMessage);
             return;
         }
 
@@ -1090,7 +1063,7 @@ async function handleCustomerOrders(bot, chatId, messageId) {
 
         orders.forEach((order, index) => {
             const statusIcon =
-                order.status === "confirmed"
+                order.status === "completed"
                     ? "✅"
                     : order.status === "cancelled"
                       ? "❌"
@@ -1099,7 +1072,7 @@ async function handleCustomerOrders(bot, chatId, messageId) {
             ordersList += `${index + 1}. ${statusIcon} ${order.products?.name || "Noma'lum mahsulot"}\n`;
             ordersList += `   💰 ${order.total_amount} so'm\n`;
             ordersList += `   📅 ${new Date(order.created_at).toLocaleDateString("uz-UZ")}\n`;
-            ordersList += `   📊 ${order.status === "confirmed" ? "Tasdiqlangan" : order.status === "cancelled" ? "Bekor qilingan" : "Kutilmoqda"}\n\n`;
+            ordersList += `   📊 ${order.status === "completed" ? "Tasdiqlangan" : order.status === "cancelled" ? "Bekor qilingan" : "Kutilmoqda"}\n\n`;
 
             keyboard.push([
                 {
@@ -1188,7 +1161,7 @@ async function handleOrderDetail(bot, chatId, messageId, orderId) {
         }
 
         const statusText =
-            order.status === "confirmed"
+            order.status === "completed"
                 ? "Tasdiqlangan"
                 : order.status === "cancelled"
                   ? "Bekor qilingan"

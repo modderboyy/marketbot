@@ -157,7 +157,7 @@ async function showMyOrders(bot, chatId, messageId) {
 
         orders.forEach((order, index) => {
             const statusEmoji = order.status === 'pending' ? '⏳' :
-                               order.status === 'confirmed' ? '✅' :
+                               order.status === 'completed' ? '✅' :
                                order.status === 'completed' ? '🎉' : '❌';
 
             orderMessage += `${statusEmoji} *${order.products?.name || 'Noma\'lum mahsulot'}*\n`;
@@ -208,7 +208,7 @@ async function showOrderDetail(bot, chatId, messageId, orderId) {
 
         const statusText = order.status === 'completed' ? '✅ Yakunlandi' : 
                           order.status === 'cancelled' ? '❌ Bekor qilindi' : 
-                          order.status === 'confirmed' ? '✅ Tasdiqlandi' : 
+                          order.status === 'completed' ? '✅ Tasdiqlandi' : 
                           order.status === 'pending' ? '⏳ Kutilmoqda' :
                           '❓ Noma\'lum';
 
@@ -234,8 +234,8 @@ ${order.delivery_address ? `🚚 Yetkazish manzili: ${order.delivery_address}` :
 
         let keyboard = [[{ text: '🔙 Buyurtmalarga qaytish', callback_data: 'my_orders' }]];
 
-        // Add customer action buttons if order is confirmed
-        if (order.status === 'confirmed' && order.delivery_address) {
+        // Add customer action buttons if order is completed
+        if (order.status === 'completed' && order.delivery_address) {
             keyboard.unshift([
                 { text: '✅ Bordim', callback_data: `customer_arrived_${order.id}` },
                 { text: '❌ Bormadim', callback_data: `customer_not_arrived_${order.id}` }
@@ -502,20 +502,41 @@ async function handleBroadcast(bot, chatId, messageId) {
 
 // Contact admin (deprecated - removed from UI)
 async function handleContactAdmin(bot, chatId, messageId) {
-    await safeEditMessage(bot, chatId, messageId, '❌ Bu funksiya vaqtincha ishlamaydi.', {
+    const { userSessions } = require('../utils/sessionManager');
+    
+    userSessions.set(chatId, {
+        state: 'awaiting_contact_message',
+        messageId: messageId
+    });
+    
+    await safeEditMessage(bot, chatId, messageId, '📝 *Murojaat qilish*\n\nXabaringizni yozing. Admin tez orada javob beradi:', {
+        parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [[
-                { text: '🔙 Orqaga', callback_data: 'main_menu' }
+                { text: '❌ Bekor qilish', callback_data: 'main_menu' }
             ]]
         }
     });
 }
 
-// Show admin orders
-async function showAdminOrders(bot, chatId, messageId) {
+// Show admin orders with pagination
+async function showAdminOrders(bot, chatId, messageId, page = 1) {
     if (!isAdmin(chatId)) return;
 
     try {
+        const itemsPerPage = 5;
+        const offset = (page - 1) * itemsPerPage;
+        
+        // Get total count first
+        const { count: totalCount, error: countError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true });
+            
+        if (countError) {
+            await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmalarni yuklashda xatolik.');
+            return;
+        }
+
         const { data: orders, error } = await supabase
             .from('orders')
             .select(`
@@ -523,10 +544,9 @@ async function showAdminOrders(bot, chatId, messageId) {
                 products (name, price)
             `)
             .order('created_at', { ascending: false })
-            .limit(20);
+            .range(offset, offset + itemsPerPage - 1);
 
         if (error) {
-            console.error('Error fetching admin orders:', error);
             await safeEditMessage(bot, chatId, messageId, '❌ Buyurtmalarni yuklashda xatolik.');
             return;
         }
@@ -542,23 +562,44 @@ async function showAdminOrders(bot, chatId, messageId) {
             return;
         }
 
-        const message = `📦 *Buyurtmalar (${orders.length} ta)*\n\nQuyidagi buyurtmalardan birini tanlang:`;
+        const totalPages = Math.ceil(totalCount / itemsPerPage);
+        const message = `📦 *Buyurtmalar* (${page}/${totalPages} sahifa)\n\nQuyidagi buyurtmalardan birini tanlang:`;
 
         const keyboard = {
             inline_keyboard: [
-                ...orders.map((order, index) => [
-                    { text: `${index + 1}. ${order.products?.name || 'Noma\'lum'} - ${order.status === 'completed' ? '✅' : order.status === 'confirmed' ? '⏳' : '📋'}`, callback_data: `admin_order_${order.id}` }
-                ]),
-                [{ text: '🔙 Admin Panel', callback_data: 'admin_panel' }]
+                ...orders.map((order, index) => {
+                    const statusIcon = order.status === 'completed' ? '✅' : 
+                                     order.status === 'cancelled' ? '❌' : 
+                                     order.status === 'confirmed' ? '⏳' : '📋';
+                    return [{ 
+                        text: `${offset + index + 1}. ${order.products?.name || 'Noma\'lum'} - ${statusIcon}`, 
+                        callback_data: `admin_order_${order.id}` 
+                    }];
+                }),
             ]
         };
+
+        // Add pagination buttons
+        const paginationRow = [];
+        if (page > 1) {
+            paginationRow.push({ text: '⬅️ Oldingi', callback_data: `admin_orders_page_${page - 1}` });
+        }
+        if (page < totalPages) {
+            paginationRow.push({ text: '➡️ Keyingi', callback_data: `admin_orders_page_${page + 1}` });
+        }
+        
+        if (paginationRow.length > 0) {
+            keyboard.inline_keyboard.push(paginationRow);
+        }
+        
+        keyboard.inline_keyboard.push([{ text: '🔙 Admin Panel', callback_data: 'admin_panel' }]);
 
         await safeEditMessage(bot, chatId, messageId, message, {
             reply_markup: keyboard,
             parse_mode: 'Markdown'
         });
     } catch (error) {
-        console.error('Error in showAdminOrders:', error);
+        await safeEditMessage(bot, chatId, messageId, '❌ Xatolik yuz berdi.');
     }
 }
 
@@ -583,7 +624,7 @@ async function showAdminOrderDetail(bot, chatId, messageId, orderId) {
 
         const statusText = order.status === 'completed' ? '✅ Yakunlandi' : 
                           order.status === 'cancelled' ? '❌ Bekor qilindi' : 
-                          order.status === 'confirmed' ? '✅ Tasdiqlandi' : 
+                          order.status === 'completed' ? '✅ Tasdiqlandi' : 
                           order.status === 'pending' ? '⏳ Kutilmoqda' :
                           '❓ Noma\'lum';
 

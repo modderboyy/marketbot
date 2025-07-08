@@ -134,7 +134,23 @@ Buyurtma berish uchun telefon raqamingizni ulashing.`;
 }
 
 async function sendReplyToUser(bot, adminChatId, message, userChatId) {
+    const { supabase } = require("../utils/database");
+    
     try {
+        const adminSession = adminSessions.get(adminChatId);
+        
+        // Save admin response to database if contact message ID exists
+        if (adminSession && adminSession.contactMessageId && adminSession.contactMessageId !== 'unknown') {
+            await supabase
+                .from('contact_messages')
+                .update({
+                    admin_response: message,
+                    status: 'replied',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', adminSession.contactMessageId);
+        }
+        
         await bot.sendMessage(userChatId, `📨 *Admin javobi:*\n\n${message}`, {
             parse_mode: "Markdown",
         });

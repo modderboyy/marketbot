@@ -386,10 +386,29 @@ async function rejectOrder(bot, chatId, messageId, orderId) {
 // Send contact message to admins
 async function sendContactToAdmins(bot, chatId, message, userInfo) {
     const { userSessions } = require('./sessionManager');
+    const { supabase } = require('./database');
 
     try {
         const user = await getOrCreateUser(chatId, userInfo);
-        const contactMessage = `📨 *Yangi murojaat*\n\n👤 Foydalanuvchi: ${user?.full_name || 'Noma\'lum'}\n🆔 Telegram ID: ${chatId}\n\n💬 Xabar:\n${message}`;
+        
+        // Save contact message to database
+        const { data: contactRecord, error: saveError } = await supabase
+            .from('contact_messages')
+            .insert({
+                name: user?.full_name || `${userInfo.first_name} ${userInfo.last_name || ''}`.trim(),
+                phone: user?.phone,
+                message: message,
+                subject: 'Telegram Bot Murojaat',
+                status: 'new'
+            })
+            .select()
+            .single();
+
+        if (saveError) {
+            console.error('Error saving contact message:', saveError);
+        }
+
+        const contactMessage = `📨 *Yangi murojaat*\n\n👤 Foydalanuvchi: ${user?.full_name || 'Noma\'lum'}\n📞 Telefon: ${user?.phone || 'Noma\'lum'}\n🆔 Telegram ID: ${chatId}\n\n💬 Xabar:\n${message}`;
 
         for (const adminId of ADMIN_IDS) {
             try {
@@ -397,7 +416,7 @@ async function sendContactToAdmins(bot, chatId, message, userInfo) {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
-                            { text: '↩️ Javob berish', callback_data: `reply_${chatId}` }
+                            { text: '↩️ Javob berish', callback_data: `reply_${chatId}_${contactRecord?.id || 'unknown'}` }
                         ]]
                     }
                 });
@@ -417,6 +436,27 @@ async function sendContactToAdmins(bot, chatId, message, userInfo) {
         userSessions.delete(chatId);
     } catch (error) {
         console.error('Error in sendContactToAdmins:', error);
+        
+        // Fallback: send simple message without saving to database
+        const fallbackMessage = `📨 *Yangi murojaat*\n\n👤 Telegram ID: ${chatId}\n\n💬 Xabar:\n${message}`;
+        
+        for (const adminId of ADMIN_IDS) {
+            try {
+                await bot.sendMessage(adminId, fallbackMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '↩️ Javob berish', callback_data: `reply_${chatId}` }
+                        ]]
+                    }
+                });
+            } catch (error) {
+                console.error(`Error sending fallback to admin ${adminId}:`, error);
+            }
+        }
+        
+        await bot.sendMessage(chatId, '✅ Xabaringiz adminlarga yuborildi.');
+        userSessions.delete(chatId);
     }
 }
 
