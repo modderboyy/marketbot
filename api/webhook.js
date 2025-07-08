@@ -6,7 +6,7 @@ const { adminSessions } = require('../utils/sessionManager');
 const { isAdmin } = require('../utils/helpers');
 
 // Initialize bot
-const bot = new TelegramBot(BOT_TOKEN);
+const bot = new TelegramBot("8057847116:AAEi6wpnJ9XMKegloX8DOzSzYC22ATKoDVs");
 
 
 
