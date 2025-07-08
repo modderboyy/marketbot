@@ -106,24 +106,23 @@ Buyurtma berish uchun telefon raqamingizni ulashing.`;
         if (session) {
             if (session.state === "awaiting_contact_message") {
                 await sendContactToAdmins(bot, chatId, messageText, userInfo);
-            } else if (session.state === "awaiting_reply_message") {
-                await sendReplyToUser(
-                    bot,
-                    chatId,
-                    messageText,
-                    session.replyToUserId,
-                );
             } else if (session.state === "awaiting_search_query") {
                 await searchProducts(bot, chatId, null, messageText);
                 userSessions.delete(chatId);
             } else {
                 await processOrderData(bot, chatId, messageText);
             }
-        } else if (
-            adminSession &&
-            adminSession.state === ADMIN_STATES.AWAITING_BROADCAST_MESSAGE
-        ) {
-            await sendBroadcastMessage(bot, chatId, messageText);
+        } else if (adminSession) {
+            if (adminSession.state === "awaiting_reply_message") {
+                await sendReplyToUser(
+                    bot,
+                    chatId,
+                    messageText,
+                    adminSession.replyToUserId,
+                );
+            } else if (adminSession.state === ADMIN_STATES.AWAITING_BROADCAST_MESSAGE) {
+                await sendBroadcastMessage(bot, chatId, messageText);
+            }
         } else {
             await bot.sendMessage(
                 chatId,

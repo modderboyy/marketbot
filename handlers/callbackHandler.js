@@ -31,7 +31,7 @@ async function handleCallback(bot, callbackQuery) {
     const messageId = callbackQuery.message.message_id;
     const data = callbackQuery.data;
 
-    console.log(`Received callback data: ${data} from chatId: ${chatId}`); // Callbackni kuzatish
+
 
     // Safely answer callback query
     try {
