@@ -1,4 +1,4 @@
-const BOT_TOKEN = process.env.BOT_TOKEN || "your_bot_token_here";
+const BOT_TOKEN = "8057847116:AAEi6wpnJ9XMKegloX8DOzSzYC22ATKoDVs";
 const SUPABASE_URL =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     "https://tdfphvmmwfqhnzfggpln.supabase.co";
