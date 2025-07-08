@@ -765,6 +765,77 @@ ${warrantyText}
 ${returnText}`;
 }
 
+// Show help guide
+async function showHelp(bot, chatId, messageId) {
+    const helpMessage = `📖 *YORDAM - Botdan foydalanish qo'llanmasi*
+
+🛒 *Buyurtma berish jarayoni:*
+1️⃣ "🛒 Sotib olish" tugmasini bosing
+2️⃣ Kerakli kategoriyani tanlang
+3️⃣ Mahsulotni tanlang va ma'lumotlarini ko'ring
+4️⃣ "🛒 Buyurtma berish" tugmasini bosing
+5️⃣ Shaxsiy ma'lumotlaringizni kiriting:
+   • To'liq ism-familiya
+   • Tug'ilgan sana (01.01.1990)
+   • Kasb/mutaxassislik
+   • Yashash manzili
+   • Telefon raqami
+   • Mahsulot miqdori
+
+📦 *Buyurtmalarim bo'limi:*
+• Barcha buyurtmalaringizni ko'rish
+• Buyurtma holati va ma'lumotlari
+• Yetkazib berish statusi
+
+👤 *Profil bo'limi:*
+• Shaxsiy ma'lumotlaringiz
+• Ro'yxatdan o'tgan sana
+• Umumiy buyurtmalar soni
+
+🔍 *Qidiruv funksiyasi:*
+• Mahsulot nomini yozing
+• Tezkor natijalar olish
+
+📞 *Murojaat qilish:*
+• Admin bilan bog'lanish
+• Savollar va takliflar
+• Yordam so'rash
+
+💡 *Foydali maslahatlar:*
+• Telefon raqamini to'g'ri formatda kiriting
+• Manzilni aniq va to'liq yozing
+• Buyurtma berishdan oldin mahsulot ma'lumotlarini diqqat bilan o'qing
+• Savollar bo'lsa admin bilan bog'laning
+
+📋 *Buyurtma holatlari:*
+• ⏳ Kutilmoqda - yangi buyurtma
+• ✅ Tasdiqlangan - admin tasdiqlagan
+• 🚚 Yetkazilmoqda - yo'lda
+• ✅ Yetkazildi - muvaffaqiyatli tugatilgan
+• ❌ Bekor qilingan - rad etilgan
+
+🌐 *Websayt:* globalmarketshop.uz`;
+
+    const keyboard = {
+        inline_keyboard: [
+            [
+                { text: '🔙 Asosiy menyu', callback_data: 'main_menu' }
+            ]
+        ]
+    };
+
+    const options = {
+        reply_markup: keyboard,
+        parse_mode: 'Markdown'
+    };
+
+    if (messageId) {
+        await safeEditMessage(bot, chatId, messageId, helpMessage, options);
+    } else {
+        await bot.sendMessage(chatId, helpMessage, options);
+    }
+}
+
 module.exports = {
     handleStart,
     showProfile,
@@ -780,5 +851,6 @@ module.exports = {
     showAdminOrders,
     showAdminOrderDetail,
     handleSearch,
-    searchProducts
+    searchProducts,
+    showHelp
 };

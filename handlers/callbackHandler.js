@@ -17,6 +17,7 @@ const {
     showAdminOrderDetail,
     handleSearch,
     searchProducts,
+    showHelp,
 } = require("./uiHandler");
 const {
     startOrderProcess,
@@ -44,20 +45,7 @@ async function handleCallback(bot, callbackQuery) {
     if (data === "main_menu") {
         await handleStart(bot, chatId, messageId);
     } else if (data === "help") {
-        await safeEditMessage(
-            bot,
-            chatId,
-            messageId,
-            "❓ *Yordam*\n\nBu bot Global Market do'koni uchun mo'ljallangan.\n\n/start - Botni qayta ishga tushirish\n/admin - Admin panel (faqat adminlar uchun)",
-            {
-                parse_mode: "Markdown",
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: "🔙 Orqaga", callback_data: "main_menu" }],
-                    ],
-                },
-            },
-        );
+        await showHelp(bot, chatId, messageId);
     } else if (data === "my_profile") {
         await showProfile(bot, chatId, messageId);
     } else if (data === "my_orders") {
