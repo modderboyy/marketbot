@@ -54,9 +54,10 @@ Quyidagi tugmalardan birini tanlang:`;
             ],
             [
                 { text: '🔍 Qidiruv', callback_data: 'search_products' },
-                { text: '🌐 Websaytga kirish', url: 'https://globalmarketshop.uz' }
+                { text: '📞 Murojaat qilish', callback_data: 'contact_admin' }
             ],
             [
+                { text: '🌐 Websaytga kirish', url: 'https://globalmarketshop.uz' },
                 { text: '❓ Yordam', callback_data: 'help' }
             ]
         ]
