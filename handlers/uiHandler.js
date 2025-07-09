@@ -260,7 +260,7 @@ async function showCategories(bot, chatId, messageId) {
             .from('categories')
             .select('*')
             .eq('is_active', true)
-            .order('name_uz');
+            .order('name');
 
         if (error) {
             console.error('Error fetching categories:', error);
@@ -287,13 +287,13 @@ async function showCategories(bot, chatId, messageId) {
         for (let i = 0; i < categories.length; i += 2) {
             const row = [];
             row.push({ 
-                text: `${categories[i].icon || '📦'} ${categories[i].name_uz}`, 
+                text: `${categories[i].icon || '📦'} ${categories[i].name}`, 
                 callback_data: `category_${categories[i].id}` 
             });
 
             if (i + 1 < categories.length) {
                 row.push({ 
-                    text: `${categories[i + 1].icon || '📦'} ${categories[i + 1].name_uz}`, 
+                    text: `${categories[i + 1].icon || '📦'} ${categories[i + 1].name}`, 
                     callback_data: `category_${categories[i + 1].id}` 
                 });
             }
